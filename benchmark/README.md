@@ -1,45 +1,47 @@
-# Benchmark — onp-spec-driven vs. concorrentes
+# Benchmark — onp-spec-driven vs. competitors
 
-Mede a **taxa de detecção mecânica de defeitos reais** de cada ferramenta de
-spec-driven development: partindo de specs reais do domínio ONP (inscrição de
-turma, notas de aluno), semeia defeitos que de fato adoecem projetos SDD e conta
-quantos cada ferramenta detecta **sozinha, num CI, sem humano nem LLM no loop**.
+Measures each spec-driven development tool's **mechanical detection rate for
+real defects**: starting from real specs from the ONP domain (class
+enrollment, student grades), it seeds defects that actually plague SDD
+projects and counts how many each tool detects **on its own, in a CI, with no
+human or LLM in the loop**.
 
-## Como rodar
+## How to run
 
 ```bash
-# 1. prepara o concorrente com validador real (OpenSpec: clona + compila)
+# 1. prepare the competitor with a real validator (OpenSpec: clone + build)
 bash benchmark/setup.sh
 
-# 2. roda a comparação ao vivo
+# 2. run the live comparison
 node benchmark/run.js
 ```
 
-Sem o setup, o benchmark ainda roda: o onp-spec-driven é avaliado ao vivo e o
-OpenSpec aparece como "não disponível" (—). Para apontar um OpenSpec já
-compilado em outro lugar: `OPENSPEC_BIN=/caminho/bin/openspec.js node benchmark/run.js`.
+Without the setup, the benchmark still runs: onp-spec-driven is evaluated
+live and OpenSpec shows up as "not available" (—). To point to an OpenSpec
+already built elsewhere: `OPENSPEC_BIN=/path/bin/openspec.js node benchmark/run.js`.
 
-## O que é medido (e o que não é)
+## What is measured (and what isn't)
 
-- **Detecção mecânica**: a ferramenta emite um erro determinístico para o
-  defeito, num comando que roda em CI. É o que mantém a spec verdadeira.
-- **Não** medimos qualidade de template, DX de onboarding, nem o que um agente
-  LLM *poderia* pegar se obedecesse — porque isso não é garantia, é esperança.
+- **Mechanical detection**: the tool emits a deterministic error for the
+  defect, from a command that runs in CI. That's what keeps the spec true.
+- We do **not** measure template quality, onboarding DX, or what an LLM agent
+  *might* catch if it happened to comply — because that's not a guarantee,
+  it's a hope.
 
-## Ferramentas
+## Tools
 
-| Ferramenta | Como entra | Por quê |
+| Tool | How it enters | Why |
 |---|---|---|
-| onp-spec-driven | executada ao vivo (`onp-spec audit --ci`) | é a nossa |
-| OpenSpec | executada ao vivo (`openspec validate --strict`) | tem validador mecânico real |
-| spec-kit | matriz de capacidade | CLI só de scaffolding; sem validador de defeitos |
+| onp-spec-driven | run live (`onp-spec audit --ci`) | it's ours |
+| OpenSpec | run live (`openspec validate --strict`) | has a real mechanical validator |
+| spec-kit | capability matrix | scaffolding-only CLI; no defect validator |
 
-A classificação do spec-kit como "sem validador mecânico" está justificada
-e é verificável no código-fonte — ver [adapters/capability.js](adapters/capability.js).
+The classification of spec-kit as "no mechanical validator" is justified
+and verifiable in the source code — see [adapters/capability.js](adapters/capability.js).
 
-## Resultado atual
+## Current result
 
-Ver [RESULTS.md](RESULTS.md) (regenerado a cada `node benchmark/run.js`).
+See [RESULTS.md](RESULTS.md) (regenerated on every `node benchmark/run.js`).
 
-Resumo: **onp-spec-driven 100% (9/9)** com baseline limpo · OpenSpec 11% (1/9,
-só requisito incompleto) · spec-kit 0% mecânico.
+Summary: **onp-spec-driven 100% (9/9)** with a clean baseline · OpenSpec 11%
+(1/9, only the incomplete requirement) · spec-kit 0% mechanical.

@@ -1,25 +1,25 @@
-# Tasks: {{TITULO}}
+# Tasks: {{TITLE}}
 
 > feature: {{FEATURE}}
 
 <!--
-  Como ler este arquivo (o formato é verificado por `onp-spec audit`):
-  - T-xxx = tarefa (código de rastreio, único no projeto inteiro).
-  - Toda tarefa referencia em `Refs:` pelo menos uma história de usuário
-    (US-xxx) ou critério de aceite (AC-xxx).
-  - Toda tarefa lista os arquivos que cria/altera em `Arquivos:` — capriche:
-    é o que decide o que `onp-spec plano` roda em PARALELO (arquivos
-    disjuntos) e o que roda em sequência.
-  - Campos opcionais por tarefa, usados pelo plano de execução:
-    `- Modelo: claude-sonnet-5` e `- Esforço: alto` (baixo|medio|alto|xalto|max).
-  - Uma tarefa só pode virar [concluida] quando os critérios de aceite dela
-    tiverem prova PASS registrada por `onp-spec verify`.
-  Status: pendente | em-andamento | concluida
-    (atalho: `onp-spec tarefa <feature> <T-xxx> <status>`)
+  How to read this file (the format is checked by `onp-spec audit`):
+  - T-xxx = task (traceability ID, unique across the whole project).
+  - Every task references in `Refs:` at least one user story
+    (US-xxx) or acceptance criterion (AC-xxx).
+  - Every task lists the files it creates/changes in `Files:` — take care:
+    it is what decides what `onp-spec plan` runs in PARALLEL (disjoint
+    files) and what runs in sequence.
+  - Optional per-task fields, used by the execution plan:
+    `- Model: claude-sonnet-5` and `- Effort: high` (low|medium|high|xhigh|max).
+  - A task can only become [done] when its acceptance criteria have a PASS
+    proof recorded by `onp-spec verify`.
+  Status: pending | in-progress | done
+    (shortcut: `onp-spec task <feature> <T-xxx> <status>`)
 -->
 
-## T-001 — [título da tarefa] [pendente]
+## T-001 — [task title] [pending]
 
 - Refs: US-001, AC-001
-- Arquivos: src/exemplo.js
-- Notas: [decisões, dependências de outras tarefas]
+- Files: src/example.js
+- Notes: [decisions, dependencies on other tasks]

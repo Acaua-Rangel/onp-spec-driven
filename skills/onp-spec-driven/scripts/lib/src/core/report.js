@@ -1,5 +1,5 @@
-// Renderização dos resultados de audit — terminal, JSON e markdown.
-// O nome legível vem primeiro; o código estável (para CI/lições) vai ao lado.
+// Rendering of audit results — terminal, JSON and markdown.
+// The readable name comes first; the stable code (for CI/lessons) sits beside it.
 
 import { findingLabel } from './labels.js';
 
@@ -17,7 +17,7 @@ export function renderTerminal(audit) {
   const { findings, stats, ok } = audit;
 
   for (const f of findings) {
-    const tag = f.severity === 'erro' ? c.red('ERRO ') : c.yellow('AVISO');
+    const tag = f.severity === 'error' ? c.red('ERROR') : c.yellow('WARN ');
     const loc = f.file ? c.dim(` ${f.file}${f.line ? `:${f.line}` : ''}`) : '';
     const feat = f.feature ? c.dim(`[${f.feature}] `) : '';
     lines.push(
@@ -27,16 +27,16 @@ export function renderTerminal(audit) {
 
   if (findings.length) lines.push('');
   lines.push(
-    `${c.bold('resumo:')} ${stats.features} feature(s) · ${stats.stories} história(s) de usuário ` +
-      `· ${stats.acs} critério(s) de aceite · ${stats.acsWithTest}/${stats.acs} com teste ` +
-      `· ${stats.acsProven}/${stats.acs} provados` +
-      (stats.assumptionsOpen ? ` · ${c.yellow(`${stats.assumptionsOpen} suposição(ões) aberta(s)`)}` : '') +
-      (stats.questionsOpen ? ` · ${c.yellow(`${stats.questionsOpen} pergunta(s) aberta(s)`)}` : '')
+    `${c.bold('summary:')} ${stats.features} feature(s) · ${stats.stories} user stor${stats.stories === 1 ? 'y' : 'ies'} ` +
+      `· ${stats.acs} acceptance criteria · ${stats.acsWithTest}/${stats.acs} with a test ` +
+      `· ${stats.acsProven}/${stats.acs} proven` +
+      (stats.assumptionsOpen ? ` · ${c.yellow(`${stats.assumptionsOpen} open assumption(s)`)}` : '') +
+      (stats.questionsOpen ? ` · ${c.yellow(`${stats.questionsOpen} open question(s)`)}` : '')
   );
   lines.push(
     ok
-      ? c.green(`✔ auditoria limpa (${stats.warnings} aviso(s))`)
-      : c.red(`✘ ${stats.errors} erro(s), ${stats.warnings} aviso(s)`)
+      ? c.green(`✔ clean audit (${stats.warnings} warning(s))`)
+      : c.red(`✘ ${stats.errors} error(s), ${stats.warnings} warning(s)`)
   );
   return lines.join('\n');
 }
@@ -45,16 +45,16 @@ export function renderJson(audit) {
   return JSON.stringify({ ok: audit.ok, stats: audit.stats, findings: audit.findings }, null, 2);
 }
 
-export function renderMarkdown(audit, { title = 'Relatório de auditoria' } = {}) {
+export function renderMarkdown(audit, { title = 'Audit report' } = {}) {
   const { findings, stats, ok } = audit;
   const lines = [`# ${title}`, ''];
-  lines.push(`- Resultado: ${ok ? '✅ PASS' : '❌ FAIL'}`);
-  lines.push(`- Features: ${stats.features} · Histórias de usuário: ${stats.stories} · Critérios de aceite: ${stats.acs}`);
-  lines.push(`- Critérios com teste: ${stats.acsWithTest}/${stats.acs} · Critérios provados: ${stats.acsProven}/${stats.acs}`);
-  lines.push(`- Suposições abertas: ${stats.assumptionsOpen} · Perguntas abertas: ${stats.questionsOpen}`);
+  lines.push(`- Result: ${ok ? '✅ PASS' : '❌ FAIL'}`);
+  lines.push(`- Features: ${stats.features} · User stories: ${stats.stories} · Acceptance criteria: ${stats.acs}`);
+  lines.push(`- Criteria with a test: ${stats.acsWithTest}/${stats.acs} · Criteria proven: ${stats.acsProven}/${stats.acs}`);
+  lines.push(`- Open assumptions: ${stats.assumptionsOpen} · Open questions: ${stats.questionsOpen}`);
   lines.push('');
   if (findings.length) {
-    lines.push('| Severidade | Problema | Feature | Detalhe | Local |');
+    lines.push('| Severity | Problem | Feature | Detail | Location |');
     lines.push('|---|---|---|---|---|');
     for (const f of findings) {
       const loc = f.file ? `${f.file}${f.line ? `:${f.line}` : ''}` : '—';
@@ -63,7 +63,7 @@ export function renderMarkdown(audit, { title = 'Relatório de auditoria' } = {}
       );
     }
   } else {
-    lines.push('Nenhum problema encontrado. Especificação e código alinhados.');
+    lines.push('No problems found. Specification and code aligned.');
   }
   lines.push('');
   return lines.join('\n');

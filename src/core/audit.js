@@ -1,10 +1,10 @@
-// Motor de auditoria — responde mecanicamente:
-//   "qual requisito NÃO tem teste?"
-//   "que teste aponta pra requisito inexistente?"
-//   "que código não mapeia pra nenhuma task?"
-//   "que princípio DEVE está sem verificação ou violado?"
+// Audit engine — answers mechanically:
+//   "which requirement has NO test?"
+//   "which test points to a non-existent requirement?"
+//   "which code maps to no task?"
+//   "which MUST principle has no check or is violated?"
 //
-// Cada achado tem código estável (ver ARQUITETURA.md) para uso em CI e docs.
+// Each finding has a stable code (see ARCHITECTURE.md) for use in CI and docs.
 
 import { existsSync } from 'fs';
 import path from 'path';
@@ -12,8 +12,8 @@ import { allAcs, SPEC_STATUSES, ASM_STATUSES, Q_STATUSES } from '../parsers/spec
 import { grepPattern } from '../parsers/annotations.js';
 import { latestMtime } from './project.js';
 
-// severidade base; em modo --ci os códigos em CI_ESCALATES viram erro
-const CI_ESCALATES = new Set(['AC_SEM_PROVA', 'VERIFY_OBSOLETO', 'Q_ABERTA', 'AC_SEM_TASK', 'ARQUIVO_ORFAO']);
+// base severity; in --ci mode the codes in CI_ESCALATES become errors
+const CI_ESCALATES = new Set(['AC_NO_PROOF', 'VERIFY_STALE', 'Q_OPEN', 'AC_NO_TASK', 'FILE_ORPHAN']);
 
 function finding(code, severity, message, extra = {}) {
   return { code, severity, message, ...extra };
@@ -24,7 +24,7 @@ export function auditProject(project, { ci = false } = {}) {
   const { config } = project;
 
   for (const err of project.errors) {
-    findings.push(finding('PROJETO_INVALIDO', 'erro', err));
+    findings.push(finding('PROJECT_INVALID', 'error', err));
   }
 
   const testFileSet = new Set(project.testFiles);
@@ -41,7 +41,7 @@ export function auditProject(project, { ci = false } = {}) {
       if (seen.has(id)) {
         const first = seen.get(id);
         findings.push(
-          finding('ID_DUPLICADO', 'erro', `${id} definido em ${first.file} e em ${file}`, {
+          finding('ID_DUPLICATE', 'error', `${id} defined in ${first.file} and in ${file}`, {
             feature: feature.name,
             file,
             line,
@@ -75,8 +75,8 @@ export function auditProject(project, { ci = false } = {}) {
     }
   }
 
-  // cobertura de tasks é GLOBAL: IDs são globais, então uma task de qualquer
-  // feature pode cobrir um AC de outra (refs cruzadas são válidas)
+  // task coverage is GLOBAL: IDs are global, so a task from any feature
+  // can cover an AC from another (cross-refs are valid)
   const globalCoveredAcs = new Set();
   for (const feature of project.features) {
     if (!feature.tasks) continue;
@@ -96,14 +96,14 @@ export function auditProject(project, { ci = false } = {}) {
     const { name, spec, tasks } = feature;
     if (!spec) {
       findings.push(
-        finding('SPEC_AUSENTE', 'erro', `feature ${name} sem spec.md`, { feature: name })
+        finding('SPEC_MISSING', 'error', `feature ${name} without spec.md`, { feature: name })
       );
       continue;
     }
 
     for (const issue of spec.parseIssues) {
       findings.push(
-        finding(issue.code, issue.code === 'AC_FORA_DE_US' ? 'erro' : 'aviso', issue.message, {
+        finding(issue.code, issue.code === 'AC_OUTSIDE_US' ? 'error' : 'warning', issue.message, {
           feature: name,
           file: spec.file,
           line: issue.line,
@@ -114,9 +114,9 @@ export function auditProject(project, { ci = false } = {}) {
     if (spec.status && !SPEC_STATUSES.includes(spec.status)) {
       findings.push(
         finding(
-          'STATUS_INVALIDO',
-          'aviso',
-          `status "${spec.status}" não é um de: ${SPEC_STATUSES.join(', ')}`,
+          'STATUS_INVALID',
+          'warning',
+          `status "${spec.status}" is not one of: ${SPEC_STATUSES.join(', ')}`,
           { feature: name, file: spec.file }
         )
       );
@@ -124,7 +124,7 @@ export function auditProject(project, { ci = false } = {}) {
 
     if (spec.stories.length === 0) {
       findings.push(
-        finding('SPEC_SEM_US', 'erro', `especificação sem nenhuma história de usuário (US-xxx)`, {
+        finding('SPEC_NO_US', 'error', `specification without any user story (US-xxx)`, {
           feature: name,
           file: spec.file,
         })
@@ -134,35 +134,35 @@ export function auditProject(project, { ci = false } = {}) {
     if (spec.feature && spec.feature !== name) {
       findings.push(
         finding(
-          'FEATURE_DIVERGENTE',
-          'aviso',
-          `"> feature: ${spec.feature}" difere do diretório "${name}"`,
+          'FEATURE_MISMATCH',
+          'warning',
+          `"> feature: ${spec.feature}" differs from the directory "${name}"`,
           { feature: name, file: spec.file }
         )
       );
     }
 
-    // Suposições e Perguntas são cidadãs de primeira classe: a AUSÊNCIA da
-    // seção também é um achado (senão o diferencial vira opcional em silêncio)
-    const specMatured = ['pronta', 'em-implementacao', 'implementada', 'auditada'].includes(
+    // Assumptions and Questions are first-class citizens: the ABSENCE of the
+    // section is also a finding (otherwise the differentiator silently becomes optional)
+    const specMatured = ['ready', 'in-implementation', 'implemented', 'audited'].includes(
       spec.status
     );
-    if (spec.sections && !spec.sections.suposicoes) {
+    if (spec.sections && !spec.sections.assumptions) {
       findings.push(
         finding(
-          'SECAO_AUSENTE',
-          specMatured ? 'erro' : 'aviso',
-          `especificação sem seção "## Suposições" — registre as suposições ou escreva "Nenhuma." explicitamente`,
+          'SECTION_MISSING',
+          specMatured ? 'error' : 'warning',
+          `specification without a "## Assumptions" section — record the assumptions or write "None." explicitly`,
           { feature: name, file: spec.file }
         )
       );
     }
-    if (spec.sections && !spec.sections.perguntas) {
+    if (spec.sections && !spec.sections.questions) {
       findings.push(
         finding(
-          'SECAO_AUSENTE',
-          specMatured ? 'erro' : 'aviso',
-          `especificação sem seção "## Perguntas em aberto" — registre as perguntas ou escreva "Nenhuma." explicitamente`,
+          'SECTION_MISSING',
+          specMatured ? 'error' : 'warning',
+          `specification without a "## Open questions" section — record the questions or write "None." explicitly`,
           { feature: name, file: spec.file }
         )
       );
@@ -171,7 +171,7 @@ export function auditProject(project, { ci = false } = {}) {
     for (const story of spec.stories) {
       if (story.acs.length === 0) {
         findings.push(
-          finding('US_SEM_AC', 'erro', `${story.id} (${story.title}) sem critério de aceite`, {
+          finding('US_NO_AC', 'error', `${story.id} (${story.title}) without an acceptance criterion`, {
             feature: name,
             file: spec.file,
             line: story.line,
@@ -180,15 +180,15 @@ export function auditProject(project, { ci = false } = {}) {
       }
       for (const ac of story.acs) {
         const missing = [];
-        if (ac.given.length === 0) missing.push('Dado');
-        if (ac.when.length === 0) missing.push('Quando');
-        if (ac.then.length === 0) missing.push('Então');
+        if (ac.given.length === 0) missing.push('Given');
+        if (ac.when.length === 0) missing.push('When');
+        if (ac.then.length === 0) missing.push('Then');
         if (missing.length) {
           findings.push(
             finding(
-              'AC_INCOMPLETO',
-              'erro',
-              `${ac.id} (${ac.title}) sem cláusula: ${missing.join(', ')}`,
+              'AC_INCOMPLETE',
+              'error',
+              `${ac.id} (${ac.title}) missing clause: ${missing.join(', ')}`,
               { feature: name, file: spec.file, line: ac.line }
             )
           );
@@ -196,27 +196,27 @@ export function auditProject(project, { ci = false } = {}) {
       }
     }
 
-    // suposições e perguntas
-    const implemented = ['implementada', 'auditada'].includes(spec.status);
-    const inProgress = ['em-implementacao', 'implementada', 'auditada'].includes(spec.status);
+    // assumptions and questions
+    const implemented = ['implemented', 'audited'].includes(spec.status);
+    const inProgress = ['in-implementation', 'implemented', 'audited'].includes(spec.status);
 
     for (const asm of spec.assumptions) {
       if (asm.status && !ASM_STATUSES.includes(asm.status)) {
         findings.push(
           finding(
-            'ASM_STATUS_INVALIDO',
-            'aviso',
-            `${asm.id} com status "${asm.status}" (use: ${ASM_STATUSES.join(', ')})`,
+            'ASM_STATUS_INVALID',
+            'warning',
+            `${asm.id} with status "${asm.status}" (use: ${ASM_STATUSES.join(', ')})`,
             { feature: name, file: spec.file, line: asm.line }
           )
         );
       }
-      if (implemented && asm.status === 'aberta') {
+      if (implemented && asm.status === 'open') {
         findings.push(
           finding(
-            'ASM_ABERTA',
-            'erro',
-            `${asm.id} continua aberta com a feature "${spec.status}": "${asm.text}" — confirme ou invalide antes de declarar pronto`,
+            'ASM_OPEN',
+            'error',
+            `${asm.id} is still open while the feature is "${spec.status}": "${asm.text}" — confirm or invalidate it before declaring done`,
             { feature: name, file: spec.file, line: asm.line }
           )
         );
@@ -227,19 +227,19 @@ export function auditProject(project, { ci = false } = {}) {
       if (q.status && !Q_STATUSES.includes(q.status)) {
         findings.push(
           finding(
-            'Q_STATUS_INVALIDO',
-            'aviso',
-            `${q.id} com status "${q.status}" (use: ${Q_STATUSES.join(', ')})`,
+            'Q_STATUS_INVALID',
+            'warning',
+            `${q.id} with status "${q.status}" (use: ${Q_STATUSES.join(', ')})`,
             { feature: name, file: spec.file, line: q.line }
           )
         );
       }
-      if (inProgress && q.status === 'aberta') {
+      if (inProgress && q.status === 'open') {
         findings.push(
           finding(
-            'Q_ABERTA',
-            'aviso',
-            `${q.id} em aberto durante implementação: "${q.text}"`,
+            'Q_OPEN',
+            'warning',
+            `${q.id} open during implementation: "${q.text}"`,
             { feature: name, file: spec.file, line: q.line }
           )
         );
@@ -252,7 +252,7 @@ export function auditProject(project, { ci = false } = {}) {
     if (tasks) {
       for (const issue of tasks.parseIssues) {
         findings.push(
-          finding(issue.code, issue.code === 'TASK_STATUS_INVALIDO' ? 'erro' : 'aviso', issue.message, {
+          finding(issue.code, issue.code === 'TASK_STATUS_INVALID' ? 'error' : 'warning', issue.message, {
             feature: name,
             file: tasks.file,
             line: issue.line,
@@ -262,14 +262,14 @@ export function auditProject(project, { ci = false } = {}) {
 
       for (const task of tasks.tasks) {
         for (const ref of task.refs) {
-          // IDs são globais: uma ref é válida se existe em QUALQUER spec
+          // IDs are global: a ref is valid if it exists in ANY spec
           const ok = ref.startsWith('US-') ? knownUsIds.has(ref) : knownAcIds.has(ref);
           if (!ok) {
             findings.push(
               finding(
-                'REF_QUEBRADA',
-                'erro',
-                `a tarefa ${task.id} referencia ${ref}, que não existe em nenhuma especificação`,
+                'REF_BROKEN',
+                'error',
+                `task ${task.id} references ${ref}, which does not exist in any specification`,
                 { feature: name, file: tasks.file, line: task.line }
               )
             );
@@ -280,29 +280,29 @@ export function auditProject(project, { ci = false } = {}) {
           if (!existsSync(path.join(config.rootDir, relFile))) {
             findings.push(
               finding(
-                'ARQUIVO_INEXISTENTE',
-                task.status === 'concluida' ? 'erro' : 'aviso',
-                `a tarefa ${task.id} mapeia ${relFile}, que não existe${task.status === 'concluida' ? ' (tarefa concluída!)' : ''}`,
+                'FILE_MISSING',
+                task.status === 'done' ? 'error' : 'warning',
+                `task ${task.id} maps ${relFile}, which does not exist${task.status === 'done' ? ' (task done!)' : ''}`,
                 { feature: name, file: tasks.file, line: task.line }
               )
             );
           }
         }
 
-        if (task.status === 'concluida') {
+        if (task.status === 'done') {
           const taskAcs = task.refs.filter((r) => r.startsWith('AC-') && knownAcIds.has(r));
           for (const acId of taskAcs) {
-            // a prova mora na feature DONA do AC (refs podem ser cruzadas)
+            // the proof lives in the feature that OWNS the AC (refs may be cross-feature)
             const owner = acById.get(acId);
             const verification = owner ? project.verifications[owner.feature.name] || null : null;
             const proof = verification?.results?.[acId];
             if (!proof || proof.status !== 'pass') {
-              const why = proof?.status === 'skip' ? ' (o teste foi PULADO — skip não é prova)' : '';
+              const why = proof?.status === 'skip' ? ' (the test was SKIPPED — skip is not proof)' : '';
               findings.push(
                 finding(
-                  'TASK_CONCLUIDA_SEM_PROVA',
-                  'erro',
-                  `a tarefa ${task.id} está [concluida] mas o critério ${acId} não tem prova PASS do verify${why}`,
+                  'TASK_DONE_NO_PROOF',
+                  'error',
+                  `task ${task.id} is [done] but criterion ${acId} has no PASS proof from verify${why}`,
                   { feature: name, file: tasks.file, line: task.line }
                 )
               );
@@ -314,7 +314,7 @@ export function auditProject(project, { ci = false } = {}) {
       for (const ac of allAcs(spec)) {
         if (!globalCoveredAcs.has(ac.id)) {
           findings.push(
-            finding('AC_SEM_TASK', 'aviso', `${ac.id} (${ac.title}) não é coberto por nenhuma tarefa`, {
+            finding('AC_NO_TASK', 'warning', `${ac.id} (${ac.title}) is not covered by any task`, {
               feature: name,
               file: tasks.file,
             })
@@ -323,15 +323,15 @@ export function auditProject(project, { ci = false } = {}) {
       }
     }
 
-    // ---------- rastreabilidade AC → teste ----------
+    // ---------- traceability AC → test ----------
     for (const ac of allAcs(spec)) {
       const tags = testSpecTags.filter((t) => t.acId === ac.id);
       if (tags.length === 0) {
         findings.push(
           finding(
-            'AC_SEM_TESTE',
-            'erro',
-            `${ac.id} (${ac.title}) não tem nenhum teste anotado com @spec:${ac.id}`,
+            'AC_NO_TEST',
+            'error',
+            `${ac.id} (${ac.title}) has no test annotated with @spec:${ac.id}`,
             { feature: name, file: spec.file, line: ac.line }
           )
         );
@@ -341,19 +341,19 @@ export function auditProject(project, { ci = false } = {}) {
         if (!proof) {
           findings.push(
             finding(
-              'AC_SEM_PROVA',
-              'aviso',
-              `${ac.id} tem teste (${tags[0].file}:${tags[0].line}) mas nunca foi provado — rode \`onp-spec verify ${name}\``,
+              'AC_NO_PROOF',
+              'warning',
+              `${ac.id} has a test (${tags[0].file}:${tags[0].line}) but was never proven — run \`onp-spec verify ${name}\``,
               { feature: name, file: tags[0].file, line: tags[0].line }
             )
           );
         } else if (proof.status !== 'pass') {
           const msg =
             proof.status === 'skip'
-              ? `${ac.id}: o teste foi PULADO na última verificação (${proof.testName || tags[0].file}) — skip não é prova`
-              : `${ac.id} FALHOU na última verificação (${proof.testName || tags[0].file})`;
+              ? `${ac.id}: the test was SKIPPED in the last verification (${proof.testName || tags[0].file}) — skip is not proof`
+              : `${ac.id} FAILED in the last verification (${proof.testName || tags[0].file})`;
           findings.push(
-            finding('AC_SEM_PROVA', 'erro', msg, {
+            finding('AC_NO_PROOF', 'error', msg, {
               feature: name,
               file: tags[0].file,
               line: tags[0].line,
@@ -362,9 +362,9 @@ export function auditProject(project, { ci = false } = {}) {
         } else if (proof.method === 'exitcode') {
           findings.push(
             finding(
-              'PROVA_FRACA',
-              'aviso',
-              `${ac.id} provado apenas pelo exit code global (reporter "exitcode") — sem granularidade por teste; prefira tap/vitest-json/jest-json`,
+              'PROOF_WEAK',
+              'warning',
+              `${ac.id} proven only by the global exit code (reporter "exitcode") — no per-test granularity; prefer tap/vitest-json/jest-json`,
               { feature: name, file: tags[0]?.file, line: tags[0]?.line }
             )
           );
@@ -372,7 +372,7 @@ export function auditProject(project, { ci = false } = {}) {
       }
     }
 
-    // verify obsoleto?
+    // verify stale?
     const verification = project.verifications[name] || null;
     if (verification?.timestamp) {
       const codeMtime = latestMtime(config.rootDir, [
@@ -382,9 +382,9 @@ export function auditProject(project, { ci = false } = {}) {
       if (codeMtime > Date.parse(verification.timestamp)) {
         findings.push(
           finding(
-            'VERIFY_OBSOLETO',
-            'aviso',
-            `código/testes mudaram depois do último verify de ${name} — rode \`onp-spec verify ${name}\` de novo`,
+            'VERIFY_STALE',
+            'warning',
+            `code/tests changed after the last verify of ${name} — run \`onp-spec verify ${name}\` again`,
             { feature: name }
           )
         );
@@ -392,7 +392,7 @@ export function auditProject(project, { ci = false } = {}) {
     }
   }
 
-  // ---------- testes órfãos (drift clássico) ----------
+  // ---------- orphan tests (classic drift) ----------
   const seenOrphan = new Set();
   for (const tag of project.annotations.specTags) {
     if (!knownAcIds.has(tag.acId)) {
@@ -401,16 +401,16 @@ export function auditProject(project, { ci = false } = {}) {
       seenOrphan.add(key);
       findings.push(
         finding(
-          'TESTE_ORFAO',
-          'erro',
-          `teste anotado com @spec:${tag.acId}, mas esse critério de aceite não existe em nenhuma especificação (a especificação mudou e o teste ficou pra trás?)`,
+          'TEST_ORPHAN',
+          'error',
+          `test annotated with @spec:${tag.acId}, but that acceptance criterion does not exist in any specification (did the spec change and the test lag behind?)`,
           { file: tag.file, line: tag.line }
         )
       );
     }
   }
 
-  // ---------- código órfão ----------
+  // ---------- orphan code ----------
   const anyTasks = project.features.some((f) => f.tasks && f.tasks.tasks.length > 0);
   if (anyTasks) {
     const claimed = new Set();
@@ -424,9 +424,9 @@ export function auditProject(project, { ci = false } = {}) {
       if (!claimed.has(src)) {
         findings.push(
           finding(
-            'ARQUIVO_ORFAO',
-            'aviso',
-            `${src} não é mapeado por nenhuma tarefa — que requisito esse código atende?`,
+            'FILE_ORPHAN',
+            'warning',
+            `${src} is not mapped by any task — which requirement does this code serve?`,
             { file: src }
           )
         );
@@ -434,52 +434,52 @@ export function auditProject(project, { ci = false } = {}) {
     }
   }
 
-  // ---------- constituição ----------
+  // ---------- constitution ----------
   if (!project.constitution) {
     findings.push(
       finding(
-        'CONSTITUICAO_AUSENTE',
-        'aviso',
-        `sem ${config.specDir}/constituicao.md — rode \`onp-spec init\` para criar (preset LGPD/educação disponível)`
+        'CONSTITUTION_MISSING',
+        'warning',
+        `no ${config.specDir}/constitution.md — run \`onp-spec init\` to create one (LGPD/education preset available)`
       )
     );
   } else {
     const constitution = project.constitution;
     for (const issue of constitution.parseIssues) {
       findings.push(
-        finding(issue.code, 'erro', issue.message, { file: constitution.file, line: issue.line })
+        finding(issue.code, 'error', issue.message, { file: constitution.file, line: issue.line })
       );
     }
     for (const p of constitution.principles) {
-      if (p.level === 'DEVE' && p.checks.length === 0) {
+      if (p.level === 'MUST' && p.checks.length === 0) {
         findings.push(
           finding(
-            'PRINCIPIO_SEM_VERIFICACAO',
-            'erro',
-            `${p.id} [DEVE] "${p.title}" não tem nenhuma verificação executável`,
+            'PRINCIPLE_NO_CHECK',
+            'error',
+            `${p.id} [MUST] "${p.title}" has no executable check`,
             { file: constitution.file, line: p.line }
           )
         );
       }
       for (const check of p.checks) {
         if (check.kind === 'gate') {
-          // satisfeita pelo próprio mecanismo do audit (AC_SEM_TESTE,
-          // AC_SEM_PROVA, TASK_CONCLUIDA_SEM_PROVA...) — nada a verificar aqui
+          // satisfied by the audit mechanism itself (AC_NO_TEST, AC_NO_PROOF,
+          // TASK_DONE_NO_PROOF...) — nothing to check here
           continue;
         }
-        if (check.kind === 'teste') {
+        if (check.kind === 'test') {
           const tags = testPrincipleTags.filter((t) => t.principleId === check.principleTag);
           if (tags.length === 0) {
             findings.push(
               finding(
-                'PRINCIPIO_VIOLADO',
-                p.level === 'DEVE' ? 'erro' : 'aviso',
-                `${p.id} exige teste @principle:${check.principleTag} e nenhum teste tem essa tag`,
+                'PRINCIPLE_VIOLATED',
+                p.level === 'MUST' ? 'error' : 'warning',
+                `${p.id} requires test @principle:${check.principleTag} and no test has that tag`,
                 { file: constitution.file, line: check.line }
               )
             );
           }
-        } else if (check.kind === 'proibido') {
+        } else if (check.kind === 'forbidden') {
           const { error, hits, files } = grepPattern(
             config.rootDir,
             check.pattern,
@@ -489,16 +489,16 @@ export function auditProject(project, { ci = false } = {}) {
           if (files.length === 0) {
             findings.push(
               finding(
-                'GLOB_SEM_ARQUIVOS',
-                'aviso',
-                `${p.id}: o glob \`${check.glob}\` não casa nenhum arquivo — verificação inerte (typo no glob?)`,
+                'GLOB_NO_FILES',
+                'warning',
+                `${p.id}: the glob \`${check.glob}\` matches no file — inert check (typo in the glob?)`,
                 { file: constitution.file, line: check.line }
               )
             );
           }
           if (error) {
             findings.push(
-              finding('VERIFICACAO_MALFORMADA', 'erro', `${p.id}: ${error}`, {
+              finding('CHECK_MALFORMED', 'error', `${p.id}: ${error}`, {
                 file: constitution.file,
                 line: check.line,
               })
@@ -507,14 +507,14 @@ export function auditProject(project, { ci = false } = {}) {
           for (const hit of hits) {
             findings.push(
               finding(
-                'PRINCIPIO_VIOLADO',
-                p.level === 'DEVE' ? 'erro' : 'aviso',
-                `${p.id} "${p.title}": padrão proibido \`${check.pattern}\` encontrado`,
+                'PRINCIPLE_VIOLATED',
+                p.level === 'MUST' ? 'error' : 'warning',
+                `${p.id} "${p.title}": forbidden pattern \`${check.pattern}\` found`,
                 { file: hit.file, line: hit.line, principle: p.id }
               )
             );
           }
-        } else if (check.kind === 'obrigatorio') {
+        } else if (check.kind === 'required') {
           const { error, hits, files } = grepPattern(
             config.rootDir,
             check.pattern,
@@ -524,16 +524,16 @@ export function auditProject(project, { ci = false } = {}) {
           if (files.length === 0) {
             findings.push(
               finding(
-                'GLOB_SEM_ARQUIVOS',
-                'aviso',
-                `${p.id}: o glob \`${check.glob}\` não casa nenhum arquivo — verificação inerte (typo no glob?)`,
+                'GLOB_NO_FILES',
+                'warning',
+                `${p.id}: the glob \`${check.glob}\` matches no file — inert check (typo in the glob?)`,
                 { file: constitution.file, line: check.line }
               )
             );
           }
           if (error) {
             findings.push(
-              finding('VERIFICACAO_MALFORMADA', 'erro', `${p.id}: ${error}`, {
+              finding('CHECK_MALFORMED', 'error', `${p.id}: ${error}`, {
                 file: constitution.file,
                 line: check.line,
               })
@@ -541,9 +541,9 @@ export function auditProject(project, { ci = false } = {}) {
           } else if (files.length > 0 && hits.length === 0) {
             findings.push(
               finding(
-                'PRINCIPIO_VIOLADO',
-                p.level === 'DEVE' ? 'erro' : 'aviso',
-                `${p.id} "${p.title}": padrão obrigatório \`${check.pattern}\` não encontrado em \`${check.glob}\``,
+                'PRINCIPLE_VIOLATED',
+                p.level === 'MUST' ? 'error' : 'warning',
+                `${p.id} "${p.title}": required pattern \`${check.pattern}\` not found in \`${check.glob}\``,
                 { file: constitution.file, line: check.line, principle: p.id }
               )
             );
@@ -553,15 +553,15 @@ export function auditProject(project, { ci = false } = {}) {
     }
   }
 
-  // ---------- resolve severidade final ----------
+  // ---------- resolve final severity ----------
   if (ci) {
     for (const f of findings) {
-      if (CI_ESCALATES.has(f.code) && f.severity === 'aviso') f.severity = 'erro';
+      if (CI_ESCALATES.has(f.code) && f.severity === 'warning') f.severity = 'error';
     }
   }
 
-  const errors = findings.filter((f) => f.severity === 'erro');
-  const warnings = findings.filter((f) => f.severity === 'aviso');
+  const errors = findings.filter((f) => f.severity === 'error');
+  const warnings = findings.filter((f) => f.severity === 'warning');
 
   const totalAcs = project.features.reduce(
     (n, f) => n + (f.spec ? allAcs(f.spec).length : 0),
@@ -589,11 +589,11 @@ export function auditProject(project, { ci = false } = {}) {
       acsWithTest,
       acsProven,
       assumptionsOpen: project.features.reduce(
-        (n, f) => n + (f.spec?.assumptions.filter((a) => a.status === 'aberta').length || 0),
+        (n, f) => n + (f.spec?.assumptions.filter((a) => a.status === 'open').length || 0),
         0
       ),
       questionsOpen: project.features.reduce(
-        (n, f) => n + (f.spec?.questions.filter((q) => q.status === 'aberta').length || 0),
+        (n, f) => n + (f.spec?.questions.filter((q) => q.status === 'open').length || 0),
         0
       ),
       principles: project.constitution?.principles.length || 0,

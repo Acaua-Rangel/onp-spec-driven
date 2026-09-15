@@ -1,262 +1,276 @@
-# TDD — onp-spec-driven como skill pura do harness Claude Code
+# TDD — onp-spec-driven as a pure skill for the Claude Code harness
 
-| Campo         | Valor                                                        |
+| Field         | Value                                                        |
 | ------------- | ------------------------------------------------------------ |
 | Tech Lead     | @vitormanoel                                                 |
-| Time          | Vitor Manoel (O Novo Programador)                            |
-| Épico         | Refatoração skill-first (pós-teste exaustivo de 17/07/2026)  |
-| Status        | Approved (auto-aprovado — projeto solo)                      |
-| Criado        | 2026-07-17                                                   |
-| Atualizado    | 2026-07-17                                                   |
+| Team          | Vitor Manoel (O Novo Programador)                            |
+| Epic          | Skill-first refactor (post exhaustive testing of 2026-07-17) |
+| Status        | Approved (self-approved — solo project)                      |
+| Created       | 2026-07-17                                                   |
+| Updated       | 2026-07-17                                                   |
 
-## Contexto
+## Context
 
-A onp-spec-driven é a ferramenta de SDD *spec-anchored* do ONP: a spec é auditada
-mecanicamente contra o código (rastreabilidade US→AC→T→teste, DoD executável,
-constituição verificável). Hoje ela é entregue como **CLI npm**
-(`@onovoprogramador/onp-spec`) + uma skill fina (`skills/onp-spec-driven/`) que
-apenas dirige o agente a chamar a CLI via `npx`.
+onp-spec-driven is ONP's *spec-anchored* SDD tool: the spec is audited
+mechanically against the code (US→AC→T→test traceability, executable DoD,
+verifiable constitution). Today it ships as an **npm CLI**
+(`@onovoprogramador/onp-spec`) + a thin skill (`skills/onp-spec-driven/`) that
+only directs the agent to call the CLI via `npx`.
 
-Uma bateria de ~80 cenários adversariais (17/07/2026, ver
-`docs/ACHADOS-teste-exaustivo.md`) mostrou que (a) o motor mecânico é sólido no
-núcleo — 41/41 testes próprios, benchmark 100% (9/9), escala 600 ACs em 52ms —
-mas (b) tem 5 furos críticos que permitem **bypass do gate ou veredito falso**, e
-(c) a skill, como está, é **letra morta sem a CLI instalada**: em sandbox,
-offline, ou num projeto que nunca rodou `npm i`, o agente não tem como executar o
-contrato. A decisão de produto é: **a skill deixa de depender de CLI instalada e
-passa a ser o artefato principal**, autossuficiente dentro de `.claude/skills/`.
+A battery of ~80 adversarial scenarios (2026-07-17, see
+`docs/EXHAUSTIVE-TESTING-FINDINGS.md`) showed that (a) the mechanical engine is
+solid at its core — 41/41 own tests, benchmark 100% (9/9), scales to 600 ACs in
+52ms — but (b) it has 5 critical holes that allow **gate bypass or a false
+verdict**, and (c) the skill, as it stands, is **dead letter without the CLI
+installed**: in a sandbox, offline, or in a project that never ran `npm i`, the
+agent has no way to execute the contract. The product decision is: **the skill
+stops depending on an installed CLI and becomes the primary artifact**,
+self-sufficient inside `.claude/skills/`.
 
-**Domínio**: tooling de desenvolvimento assistido por IA (material do workshop
-Spec-Driven do ONP).
-**Stakeholders**: Vitor (autor/instrutor), alunos do workshop (usuários da skill
-nos próprios projetos), agentes (Claude Code/Cursor) que executam o fluxo.
+**Domain**: AI-assisted development tooling (material for ONP's Spec-Driven
+workshop).
+**Stakeholders**: Vitor (author/instructor), workshop students (users of the
+skill in their own projects), agents (Claude Code/Cursor) that run the flow.
 
-## Definição do Problema
+## Problem Definition
 
-### Problemas que estamos resolvendo
+### Problems we're solving
 
-- **P1 — Skill inerte sem CLI**: a SKILL.md instrui `onp-spec ...` / `npx ...`.
-  Sem o pacote instalado (sandbox, offline, projeto novo), o agente improvisa ou
-  ignora o gate. Impacto: o diferencial ("a máquina prova") desliga em silêncio.
-- **P2 — Bypass do gate (críticos CR-1..CR-5 dos achados)**:
-  - teste `skip`/`todo` conta como prova PASS (`# SKIP` é `ok` no TAP);
-  - `[concluída]` com acento vira `pendente` silenciosamente;
-  - `audit --json` trunca saída >8KB (`process.exit` antes do flush) — CI cego;
-  - regex patológica na constituição trava o audit (ReDoS, 60s+);
-  - preset base exige teste `@principle:P-001` que o fluxo nunca cria → o gate
-    **nunca** fecha no caminho feliz e o usuário aprende a ignorá-lo.
-- **P3 — Falsos positivos que corroem confiança (AL-1..AL-7)**: NFD do macOS
-  quebra "Então"; caminho com espaço explode em `ARQUIVO_INEXISTENTE`; GWT
-  indentado vira `AC_INCOMPLETO`; glob com typo desliga princípio sem aviso;
-  nível `[OBRIGATORIO]` some; seções Suposições/Perguntas ausentes passam
-  batido (o diferencial #3 não é imposto).
-- **P4 — Skill sem contrato operacional para o agente**: sem loop de correção
-  limitado, sem commits atômicos por task, sem estratégia de contexto, sem
-  degradação graciosa quando `node` não existe.
+- **P1 — Skill inert without the CLI**: SKILL.md instructs `onp-spec ...` /
+  `npx ...`. Without the package installed (sandbox, offline, new project), the
+  agent improvises or ignores the gate. Impact: the differentiator ("the
+  machine proves it") silently turns off.
+- **P2 — Gate bypass (findings CR-1..CR-5, critical)**:
+  - a `skip`/`todo` test counts as PASS proof (`# SKIP` is `ok` in TAP);
+  - `[concluída]` (now `[done]`) with the accent silently becomes `pendente`
+    (now `pending`);
+  - `audit --json` truncates output >8KB (`process.exit` before the flush) —
+    blind CI;
+  - a pathological regex in the constitution hangs the audit (ReDoS, 60s+);
+  - the base preset requires a `@principle:P-001` test that the flow never
+    creates → the gate **never** closes on the happy path and the user learns
+    to ignore it.
+- **P3 — False positives that erode trust (AL-1..AL-7)**: macOS NFD breaks
+  "Então" (now "Then"); a path with a space blows up into `ARQUIVO_INEXISTENTE`
+  (now `FILE_MISSING`); indented GWT becomes `AC_INCOMPLETO` (now
+  `AC_INCOMPLETE`); a glob typo turns off a principle with no warning; the
+  `[OBRIGATORIO]` level disappears; missing Assumptions/Questions sections
+  slip by unnoticed (differentiator #3 is not enforced).
+- **P4 — Skill with no operational contract for the agent**: no bounded
+  correction loop, no atomic commits per task, no context strategy, no
+  graceful degradation when `node` doesn't exist.
 
-### Por que agora?
+### Why now?
 
-- A skill é material central do workshop (Edição em andamento) — alunos vão
-  copiá-la para projetos reais já em agosto/2026.
-- O benchmark público afirma "o agente não consegue declarar vitória"; CR-1
-  (skip = prova) falsifica a afirmação hoje.
+- The skill is central material for the workshop (edition in progress) —
+  students will copy it into real projects as early as August 2026.
+- The public benchmark claims "the agent can't declare victory"; CR-1
+  (skip = proof) falsifies that claim today.
 
-### Impacto de não resolver
+### Impact of not solving it
 
-- **Negócio**: a demo do workshop quebra no primeiro `audit --ci` (CR-5) e a
-  tese de venda ("100% de detecção") fica vulnerável a contra-exemplo trivial.
-- **Técnico**: cada projeto que instala a skill via `init --agents` congela uma
-  cópia com os bugs (drift SK-5).
-- **Usuários**: falsos `AC_INCOMPLETO` em specs corretas (NFD) ensinam a
-  desconfiar do audit — o oposto do produto.
+- **Business**: the workshop demo breaks on the first `audit --ci` (CR-5) and
+  the sales pitch ("100% detection") becomes vulnerable to a trivial
+  counter-example.
+- **Technical**: every project that installs the skill via `init --agents`
+  freezes a copy with the bugs (SK-5 drift).
+- **Users**: false `AC_INCOMPLETO` on correct specs (NFD) teaches people to
+  distrust the audit — the opposite of the product.
 
-## Escopo
+## Scope
 
-### ✅ Dentro do escopo (V1)
+### ✅ In scope (V1)
 
-- Skill autossuficiente em `skills/onp-spec-driven/`: SKILL.md reescrita
-  (harness-first), referências, **motor mecânico embarcado** em `scripts/`
-  (zero dependências, roda com o `node` do ambiente — sem npm/npx/instalação).
-- Correção dos 5 críticos (CR-1..CR-5) e dos 7 altos (AL-1..AL-7) no motor
-  (`src/`), que continua sendo a fonte única de verdade.
-- Sincronização gerada `src/ → skills/onp-spec-driven/scripts/` com teste que
-  falha se divergirem (mata SK-5).
-- Contrato operacional do agente na SKILL.md: loop de correção limitado (3
-  iterações), commit atômico por task, gate final com saída colada, degradação
-  graciosa sem `node`.
-- Novos achados: `GLOB_SEM_ARQUIVOS`, `NIVEL_INVALIDO`, `SECAO_AUSENTE`,
+- Self-sufficient skill in `skills/onp-spec-driven/`: rewritten SKILL.md
+  (harness-first), references, **embedded mechanical engine** in `scripts/`
+  (zero dependencies, runs with the environment's `node` — no npm/npx/install).
+- Fixing the 5 critical findings (CR-1..CR-5) and the 7 high findings
+  (AL-1..AL-7) in the engine (`src/`), which remains the single source of
+  truth.
+- Generated sync `src/ → skills/onp-spec-driven/scripts/` with a test that
+  fails if they diverge (kills SK-5).
+- Agent operational contract in SKILL.md: bounded correction loop (3
+  iterations), atomic commit per task, final gate with pasted output, graceful
+  degradation without `node`.
+- New findings: `GLOB_SEM_ARQUIVOS`, `NIVEL_INVALIDO`, `SECAO_AUSENTE`,
   `FEATURE_DIVERGENTE`, `PROVA_FRACA`, `ID_CURTO`, `TASK_STATUS_INVALIDO`.
-- Semântica de refs global (IDs são globais → refs cruzadas entre features
-  resolvem, MD-1).
-- Testes de regressão para todos os achados corrigidos (a bateria adversarial
-  vira suíte).
+- Global ref semantics (IDs are global → cross-feature refs resolve, MD-1).
+- Regression tests for every fixed finding (the adversarial battery becomes a
+  suite).
 
-### ❌ Fora do escopo (V1)
+### ❌ Out of scope (V1)
 
-- Remover/despublicar a CLI npm (continua existindo para CI puro; vira consumidora
-  do mesmo `src/`).
-- Suporte a Windows nativo (caminhos `\`) além do que já existe.
-- Novos reporters de teste (mantém tap, vitest-json, jest-json, exitcode).
-- Tradução da skill para inglês.
-- Lessons/memória auto-evolutiva estilo TLC (fica para V2).
+- Removing/unpublishing the npm CLI (it keeps existing for pure CI; it becomes
+  a consumer of the same `src/`).
+- Native Windows support (`\` paths) beyond what already exists.
+- New test reporters (keeps tap, vitest-json, jest-json, exitcode).
+- Translating the skill to English (done later, see `ARCHITECTURE.md`).
+- TLC-style self-evolving lessons/memory (left for V2).
 
-### 🔮 Futuro (V2+)
+### 🔮 Future (V2+)
 
-- `verificação(auditoria)` com queries semânticas; watch mode; lessons layer;
-  instalador `--agents cursor`.
+- `verificação(auditoria)` (now `verification(gate)`) with semantic queries; watch mode; lessons layer;
+  `--agents cursor` installer.
 
-## Solução Técnica
+## Technical Solution
 
-### Visão da arquitetura
+### Architecture overview
 
-Inversão de dependência: hoje `skill → CLI global`; passa a ser
-`skill ⊃ motor` (o motor viaja dentro da skill) e `CLI → mesmo motor` (compat).
+Dependency inversion: today it's `skill → global CLI`; it becomes
+`skill ⊃ engine` (the engine travels inside the skill) and `CLI → same engine`
+(compat).
 
 ```mermaid
 graph TD
-    subgraph "skills/onp-spec-driven/  (artefato principal, autossuficiente)"
-        SK[SKILL.md - contrato do agente] --> REF[references/*.md]
-        SK -->|"node scripts/onp-spec.mjs"| ENG[scripts/ - motor embarcado + templates]
+    subgraph "skills/onp-spec-driven/  (primary, self-sufficient artifact)"
+        SK[SKILL.md - agent contract] --> REF[references/*.md]
+        SK -->|"node scripts/onp-spec.mjs"| ENG[scripts/ - embedded engine + templates]
     end
-    SRC[src/ - fonte única] -->|"npm run build:skill (cópia verificada por teste)"| ENG
-    SRC --> CLI[bin/onp-spec.js - CLI npm, compat/CI]
-    ENG -->|lê/escreve| SPEC[".spec/ do projeto do usuário"]
-    ENG -->|"spawn com timeout"| RUNNER[test runner do projeto]
+    SRC[src/ - single source] -->|"npm run build:skill (copy verified by test)"| ENG
+    SRC --> CLI[bin/onp-spec.js - npm CLI, compat/CI]
+    ENG -->|reads/writes| SPEC[".spec/ of the user's project"]
+    ENG -->|"spawn with timeout"| RUNNER[the project's test runner]
 ```
 
-**Componentes**:
+**Components**:
 
-- `SKILL.md` — o contrato do agente: fases, auto-dimensionamento, gate,
-  degradação. Nunca menciona npm/npx; resolve `scripts/` relativo ao diretório
-  da própria skill.
-- `scripts/onp-spec.mjs` + `scripts/lib/` + `scripts/templates/` — cópia gerada
-  de `src/` + `templates/` (motor embarcado). Zero dependências; requisito
-  único: Node ≥ 18 presente no ambiente (já requisito de projetos JS; para
-  projetos não-JS o audit estrutural continua funcionando — só o `verify`
-  depende do runner da stack).
-- `src/` — fonte única; recebe todas as correções.
-- `tools/build-skill.mjs` — gera `scripts/` a partir de `src/`+`templates/`;
-  `test/skill-sync.test.js` falha se `scripts/` divergir do gerado.
+- `SKILL.md` — the agent's contract: phases, auto-sizing, gate, degradation.
+  Never mentions npm/npx; resolves `scripts/` relative to the skill's own
+  directory.
+- `scripts/onp-spec.mjs` + `scripts/lib/` + `scripts/templates/` — generated
+  copy of `src/` + `templates/` (embedded engine). Zero dependencies; only
+  requirement: Node ≥ 18 present in the environment (already a requirement for
+  JS projects; for non-JS projects the structural audit keeps working — only
+  `verify` depends on the stack's runner).
+- `src/` — single source of truth; receives all the fixes.
+- `tools/build-skill.mjs` — generates `scripts/` from `src/`+`templates/`;
+  `test/skill-sync.test.js` fails if `scripts/` diverges from what it
+  generates.
 
-### Decisão central: motor mecânico embarcado (não "agente audita na mão")
+### Central decision: embedded mechanical engine (not "the agent audits by hand")
 
-A alternativa "o agente faz o audit lendo os arquivos" foi **rejeitada**: o
-produto existe exatamente porque autor não pode ser verificador. A prova precisa
-vir de um processo determinístico fora do modelo (exit code), senão regredimos a
-"confie na palavra do agente". O motor embarcado preserva isso sem pedir
-instalação: copiar a pasta da skill é a instalação inteira.
+The alternative "the agent does the audit by reading the files" was
+**rejected**: the product exists precisely because the author can't be the
+verifier. Proof needs to come from a deterministic process outside the model
+(exit code), otherwise we regress to "trust the agent's word". The embedded
+engine preserves that without requiring an install: copying the skill folder
+is the entire installation.
 
-### Correções no motor (contratos, por achado)
+### Engine fixes (contracts, by finding)
 
-| Achado | Correção (contrato observável) |
+| Finding | Fix (observable contract) |
 |---|---|
-| CR-1 | Parser TAP/JSON reconhece `# SKIP`/`# TODO`/`skipped`/`todo`/`pending` → veredito `skip`. `skip` **nunca** vira prova PASS; audit acusa `AC_SEM_PROVA` citando o skip. Regra por tag: qualquer `fail` → fail; senão qualquer `pass` → pass; senão → skip. |
-| CR-2 | Status de task normalizado (minúsculas + sem acento): `concluída`/`Concluida` ⇒ `concluida`. Token desconhecido em `[...]` ⇒ `TASK_STATUS_INVALIDO` (erro) — nunca degradar para `pendente` em silêncio. |
-| CR-3 | `bin` e entrypoint embarcado usam `process.exitCode` (nunca `process.exit()` após escrever no stdout) → saída completa garantida em pipe/CI. |
-| CR-4 | Verificações regex da constituição rodam em subprocesso com timeout (5s por verificação); estouro ⇒ `VERIFICACAO_MALFORMADA` ("regex excedeu o tempo limite") em vez de travar o gate. |
-| CR-5 | Preset base: P-001 passa a usar `verificação(gate)` — satisfeita pelo próprio mecanismo do audit (documentada como intrínseca). `scaffold` passa a gerar também esqueleto de teste para toda `verificação(teste)` sem tag existente ⇒ caminho feliz fecha com exit 0 sem passos ocultos. |
-| AL-1 | Todo conteúdo lido é normalizado `NFC` antes do parse (specs, tasks, constituição, anotações). |
-| AL-2 | `Arquivos:` divide **apenas por vírgula** (espaços em caminhos são válidos); crases continuam removidas. |
-| AL-3 | Cláusulas GWT e campos de task aceitam indentação e marcadores `-`/`*`; `**dado**`/`**DADO**` aceitos (match sem case). |
-| AL-4 | Glob de `verificação(proibido/obrigatório)` que casa 0 arquivos ⇒ `GLOB_SEM_ARQUIVOS` (aviso). |
-| AL-5 | `## P-xxx [NÍVEL]` com nível fora de DEVE/RECOMENDADO/PODE ⇒ `NIVEL_INVALIDO` (erro) — nunca ignorar. |
-| AL-6 | Seções `## Suposições` e `## Perguntas em aberto` ausentes ⇒ `SECAO_AUSENTE` (aviso em rascunho; erro com status ≥ `pronta`). "Nenhuma." explícito satisfaz. |
-| AL-7/MD-6 | Prova por método `exitcode` só é concedida a AC com teste anotado, e todo proof `exitcode` gera `PROVA_FRACA` (aviso) — bypass por comentário+exitcode fechado. |
-| MD-1 | Refs resolvem contra o conjunto **global** de IDs (IDs já são globais); cobertura de AC idem. |
-| MD-2 | `> feature:` ≠ nome do diretório ⇒ `FEATURE_DIVERGENTE` (aviso). |
-| MD-3 | IDs de 1–2 dígitos em headings ⇒ `ID_CURTO` (aviso, "use 3+ dígitos"). |
-| MD-4 | `verify` com 0 tags casadas imprime dica explícita: "nenhum título de teste contém `@spec:AC-xxx` — a tag vai no TÍTULO do teste". |
+| CR-1 | TAP/JSON parser recognizes `# SKIP`/`# TODO`/`skipped`/`todo`/`pending` → `skip` verdict. `skip` **never** becomes PASS proof; audit reports `AC_SEM_PROVA` (now `AC_NO_PROOF`) citing the skip. Per-tag rule: any `fail` → fail; else any `pass` → pass; else → skip. |
+| CR-2 | Task status normalized (lowercase + no accent): `concluída`/`Concluida` (now `done`/`Done`) ⇒ `concluida` (now `done`). Unknown token in `[...]` ⇒ `TASK_STATUS_INVALIDO` (now `TASK_STATUS_INVALID`, error) — never silently degrade to `pendente` (now `pending`). |
+| CR-3 | The `bin` and the embedded entrypoint use `process.exitCode` (never `process.exit()` after writing to stdout) → complete output guaranteed in pipe/CI. |
+| CR-4 | Constitution regex verifications run in a subprocess with a timeout (5s per verification); overrun ⇒ `VERIFICACAO_MALFORMADA` (now `CHECK_MALFORMED`, "regex exceeded the time limit") instead of hanging the gate. |
+| CR-5 | Base preset: P-001 now uses `verificação(gate)` (now `verification(gate)`) — satisfied by the audit's own mechanism (documented as intrinsic). `scaffold` now also generates a test skeleton for every `verificação(teste)` (now `verification(test)`) with no existing tag ⇒ the happy path closes with exit 0 with no hidden steps. |
+| AL-1 | All content read is normalized to `NFC` before parsing (specs, tasks, constitution, annotations). |
+| AL-2 | `Arquivos:` (now `Files:`) splits **only on comma** (spaces in paths are valid); backticks are still stripped. |
+| AL-3 | GWT clauses and task fields accept indentation and `-`/`*` markers; `**dado**`/`**DADO**` (now `**given**`/`**GIVEN**`) accepted (case-insensitive match). |
+| AL-4 | A `verificação(proibido/obrigatório)` (now `verification(forbidden/required)`) glob that matches 0 files ⇒ `GLOB_SEM_ARQUIVOS` (now `GLOB_NO_FILES`, warning). |
+| AL-5 | `## P-xxx [LEVEL]` with a level outside MUST/RECOMMENDED/MAY ⇒ `NIVEL_INVALIDO` (now `LEVEL_INVALID`, error) — never ignore. |
+| AL-6 | Missing `## Suposições` and `## Perguntas em aberto` (now `## Assumptions` and `## Open questions`) sections ⇒ `SECAO_AUSENTE` (now `SECTION_MISSING`, warning in draft; error with status ≥ `pronta`/`ready`). An explicit "None." satisfies it. |
+| AL-7/MD-6 | Proof by the `exitcode` method is only granted to an AC with an annotated test, and every `exitcode` proof generates `PROVA_FRACA` (now `PROOF_WEAK`, warning) — the comment+exitcode bypass is closed. |
+| MD-1 | Refs resolve against the **global** set of IDs (IDs are already global); AC coverage likewise. |
+| MD-2 | `> feature:` ≠ directory name ⇒ `FEATURE_DIVERGENTE` (now `FEATURE_MISMATCH`, warning). |
+| MD-3 | 1–2 digit IDs in headings ⇒ `ID_CURTO` (now `ID_SHORT`, warning, "use 3+ digits"). |
+| MD-4 | `verify` with 0 matched tags prints an explicit hint: "no test title contains `@spec:AC-xxx` — the tag goes in the test TITLE". |
 
-### Contrato da skill (SKILL.md reescrita)
+### Skill contract (rewritten SKILL.md)
 
-- **Fluxo**: Especificar → (Projetar) → (Tarefas) → Executar → **Auditar**, com
-  auto-dimensionamento e válvula de segurança (se ao listar passos aparecerem
-  >5 passos ou dependências, volta e cria `tasks.md`).
-- **Gate inegociável**: última ação de qualquer feature = rodar o audit em modo
-  CI e **colar a saída**; exit ≠ 0 ⇒ não está pronto.
-- **Loop limitado**: no máximo 3 ciclos corrigir→re-auditar; persiste falhando ⇒
-  parar e apresentar achados ao usuário (nunca afrouxar teste/princípio).
-- **Execução**: 1 task = 1 commit atômico; teste primeiro (scaffold), depois
-  implementação até o runner passar.
-- **Contexto**: referências carregadas sob demanda por fase; nunca carregar duas
-  specs de features diferentes simultaneamente.
-- **Degradação graciosa**: sem `node` no ambiente ⇒ a skill instrui checklist
-  manual dos mesmos achados, com o resultado marcado explicitamente como
-  `PROVA FRACA (auditoria manual)` — nunca silencioso.
+- **Flow**: Specify → (Design) → (Tasks) → Execute → **Audit**, with
+  auto-sizing and a safety valve (if listing steps shows >5 steps or
+  dependencies, go back and create `tasks.md`).
+- **Non-negotiable gate**: the last action of any feature = run the audit in
+  CI mode and **paste the output**; exit ≠ 0 ⇒ not done.
+- **Bounded loop**: at most 3 fix→re-audit cycles; still failing ⇒ stop and
+  present the findings to the user (never loosen a test/principle).
+- **Execution**: 1 task = 1 atomic commit; test first (scaffold), then
+  implementation until the runner passes.
+- **Context**: references loaded on demand per phase; never load two different
+  features' specs at the same time.
+- **Graceful degradation**: no `node` in the environment ⇒ the skill instructs
+  a manual checklist of the same findings, with the result explicitly marked
+  as `WEAK PROOF (manual audit)` — never silent.
 
-### Mudanças de dados/formato
+### Data/format changes
 
-- `.spec/` inalterado (compat total com projetos existentes).
-- `verification/<feature>.json`: campo `status` ganha valor `skip`; campo
-  `method` já existente passa a ser exigido na leitura (ausente ⇒ tratado como
-  fraco).
-- Catálogo de achados: + `GLOB_SEM_ARQUIVOS`, `NIVEL_INVALIDO`, `SECAO_AUSENTE`,
-  `FEATURE_DIVERGENTE`, `PROVA_FRACA`, `ID_CURTO`, `TASK_STATUS_INVALIDO`
-  (documentados em ARQUITETURA.md).
+- `.spec/` unchanged (full compat with existing projects).
+- `verification/<feature>.json`: the `status` field gains a `skip` value; the
+  already-existing `method` field is now required on read (missing ⇒ treated
+  as weak).
+- Findings catalog: + `GLOB_SEM_ARQUIVOS` (now `GLOB_NO_FILES`), `NIVEL_INVALIDO`
+  (now `LEVEL_INVALID`), `SECAO_AUSENTE` (now `SECTION_MISSING`),
+  `FEATURE_DIVERGENTE` (now `FEATURE_MISMATCH`), `PROVA_FRACA` (now
+  `PROOF_WEAK`), `ID_CURTO` (now `ID_SHORT`), `TASK_STATUS_INVALIDO` (now
+  `TASK_STATUS_INVALID`) (documented in ARCHITECTURE.md).
 
-## Riscos
+## Risks
 
-| Risco | Impacto | Prob. | Mitigação |
+| Risk | Impact | Prob. | Mitigation |
 |---|---|---|---|
-| Cópia `scripts/` diverge de `src/` (drift) | Alto | Média | Build gerado + `skill-sync.test.js` que falha a suíte se divergir; regeneração é um comando |
-| Aceitar variantes (acento/case/indentação) cria ambiguidade nova | Médio | Média | Normalização documentada na gramática; testes de regressão para cada variante aceita e cada rejeitada |
-| Subprocesso com timeout por verificação regex deixa o audit mais lento | Baixo | Alta | Só verificações `proibido`/`obrigatório` pagam o custo (~50ms cada); orçamento medido no teste de escala (600 ACs < 2s) |
-| Mudança de semântica de refs (local→global) muda resultado de audits existentes | Médio | Baixa | Só remove erros falsos (REF_QUEBRADA de ref válida); nunca adiciona erro novo; changelog explícito |
-| `verificação(gate)` mal compreendida (parece "de graça") | Baixo | Média | Documentação no preset explica que ela é satisfeita pelo mecanismo do audit; LGPD mantém testes reais |
-| Projetos não-JS sem `node` perdem o gate mecânico | Médio | Baixa | Degradação graciosa explícita (PROVA FRACA) + audit estrutural continua rodável em qualquer CI com Node |
+| `scripts/` copy diverges from `src/` (drift) | High | Medium | Generated build + `skill-sync.test.js` that fails the suite on divergence; regeneration is one command |
+| Accepting variants (accent/case/indentation) creates new ambiguity | Medium | Medium | Normalization documented in the grammar; regression tests for every accepted and every rejected variant |
+| Subprocess with a timeout per regex verification slows the audit down | Low | High | Only `proibido`/`obrigatório` (now `forbidden`/`required`) verifications pay the cost (~50ms each); budget measured in the scale test (600 ACs < 2s) |
+| Ref semantics change (local→global) changes the result of existing audits | Medium | Low | Only removes false errors (`REF_QUEBRADA`, now `REF_BROKEN`, on a valid ref); never adds a new error; explicit changelog |
+| `verificação(gate)` (now `verification(gate)`) misunderstood (looks "free") | Low | Medium | Preset documentation explains it's satisfied by the audit's mechanism; LGPD keeps real tests |
+| Non-JS projects with no `node` lose the mechanical gate | Medium | Low | Explicit graceful degradation (WEAK PROOF) + structural audit stays runnable on any CI with Node |
 
-## Estratégia de Testes
+## Testing Strategy
 
-| Tipo | Escopo | Abordagem |
+| Type | Scope | Approach |
 |---|---|---|
-| Unit | parsers (TAP skip/todo, status normalizado, NFC, vírgula em Arquivos, níveis) | `node:test`, casos derivados 1:1 dos achados |
-| Unit | audit (novos achados, refs globais, seção ausente, prova fraca) | fixtures em memória |
-| Integração | CLI/entrypoint embarcado ponta-a-ponta em sandbox (init→new→scaffold→verify→audit exit 0) | processo real, TAP real |
-| Regressão adversarial | os ~80 cenários do laboratório viram `test/adversarial.test.js` (os 12 que falhavam DEVEM passar) | sandbox por cenário |
-| Sync | `scripts/` ≡ build de `src/` | hash por arquivo |
-| Benchmark | 100% (9/9) e baseline limpo preservados | `node benchmark/run.js` |
+| Unit | parsers (TAP skip/todo, normalized status, NFC, comma in Arquivos, levels) | `node:test`, cases derived 1:1 from the findings |
+| Unit | audit (new findings, global refs, missing section, weak proof) | in-memory fixtures |
+| Integration | embedded CLI/entrypoint end-to-end in a sandbox (init→new→scaffold→verify→audit exit 0) | real process, real TAP |
+| Adversarial regression | the ~80 lab scenarios become `test/adversarial.test.js` (the 12 that were failing MUST pass) | sandbox per scenario |
+| Sync | `scripts/` ≡ build of `src/` | per-file hash |
+| Benchmark | 100% (9/9) and clean baseline preserved | `node benchmark/run.js` |
 
-**Cenários críticos**: skip nunca prova; `[concluída]` fecha o gate correto;
-JSON de 600 ACs íntegro via pipe; ReDoS não trava; caminho feliz (init base →
-new → scaffold → implementar → verify → audit --ci) sai 0 sem passo oculto.
+**Critical scenarios**: skip never proves; `[concluída]` (now `[done]`) closes the gate
+correctly; a 600-AC JSON stays intact through a pipe; ReDoS doesn't hang; the
+happy path (base init → new → scaffold → implement → verify → audit --ci)
+exits 0 with no hidden step.
 
-## Plano de Implementação
+## Implementation Plan
 
-| Fase | Task | Saída verificável |
+| Phase | Task | Verifiable output |
 |---|---|---|
-| **F1 — Motor** | Corrigir CR-1..CR-4, AL-1..AL-7, MD-1..MD-4 em `src/` + testes de regressão | suíte `node --test` verde incluindo novos casos |
-| | Preset base com `verificação(gate)` + scaffold de testes de princípio (CR-5) | caminho feliz fecha com exit 0 |
-| **F2 — Empacotamento** | `tools/build-skill.mjs` (src+templates → scripts/) + teste de sync | `skill-sync.test.js` verde |
-| **F3 — Skill** | Reescrever SKILL.md (harness-first, sem npx) + referências atualizadas | revisão manual + smoke com agente |
-| **F4 — Validação** | Bateria adversarial completa re-executada contra o motor embarcado | 0 achados críticos/altos remanescentes |
-| | Benchmark + suíte + E2E do fluxo feliz | tudo verde, saída colada |
+| **F1 — Engine** | Fix CR-1..CR-4, AL-1..AL-7, MD-1..MD-4 in `src/` + regression tests | green `node --test` suite including new cases |
+| | Base preset with `verificação(gate)` (now `verification(gate)`) + principle test scaffolding (CR-5) | happy path closes with exit 0 |
+| **F2 — Packaging** | `tools/build-skill.mjs` (src+templates → scripts/) + sync test | green `skill-sync.test.js` |
+| **F3 — Skill** | Rewrite SKILL.md (harness-first, no npx) + updated references | manual review + smoke test with the agent |
+| **F4 — Validation** | Full adversarial battery re-run against the embedded engine | 0 remaining critical/high findings |
+| | Benchmark + suite + happy-flow E2E | everything green, output pasted |
 
-Dependências: F2 depende de F1; F4 fecha o ciclo (mesma régua dos achados).
+Dependencies: F2 depends on F1; F4 closes the loop (same yardstick as the
+findings).
 
-## Dependências
+## Dependencies
 
-| Dependência | Tipo | Status | Risco |
+| Dependency | Type | Status | Risk |
 |---|---|---|---|
-| Node ≥ 18 no ambiente do agente | Runtime | Presente no Claude Code | Baixo |
-| Test runner do projeto do usuário (verify) | Externa | Varia por stack | Médio — degradação documentada |
-| Nenhum pacote npm | — | zero-dep mantido | — |
+| Node ≥ 18 in the agent's environment | Runtime | Present in Claude Code | Low |
+| The user's project's test runner (verify) | External | Varies by stack | Medium — documented degradation |
+| No npm package | — | zero-dep maintained | — |
 
-## Questões em Aberto
+## Open Questions
 
-| # | Questão | Posição atual | Status |
+| # | Question | Current position | Status |
 |---|---|---|---|
-| 1 | Renomear a skill instalada para evitar colisão com a TLC `spec-driven` em projetos que têm ambas? | Manter `onp-spec-driven` (nome já distinto) e declarar fronteira no description | ✅ Resolvida |
-| 2 | A CLI npm deve ser deprecada na doc? | Não — vira "modo CI"; skill é o caminho principal | ✅ Resolvida |
-| 3 | Lessons layer (estilo TLC) nesta versão? | V2 — fora do escopo | ✅ Resolvida |
-| 4 | Aceitar IDs de 1–2 dígitos em vez de só avisar? | Só aviso (`ID_CURTO`) — mudar a gramática quebra unicidade visual | ✅ Resolvida |
+| 1 | Rename the installed skill to avoid colliding with TLC's `spec-driven` in projects that have both? | Keep `onp-spec-driven` (already a distinct name) and state the boundary in the description | ✅ Resolved |
+| 2 | Should the npm CLI be deprecated in the docs? | No — it becomes "CI mode"; the skill is the primary path | ✅ Resolved |
+| 3 | Lessons layer (TLC-style) in this version? | V2 — out of scope | ✅ Resolved |
+| 4 | Accept 1–2 digit IDs instead of just warning? | Just a warning (`ID_CURTO`) — changing the grammar breaks visual uniqueness | ✅ Resolved |
 
-## Plano de Rollback
+## Rollback Plan
 
-- A refatoração é aditiva e versionada em git no repo `onp-spec-driven`; rollback
-  = `git revert` do range (sem migração de dados — `.spec/` dos usuários não muda
-  de formato).
-- A CLI npm publicada permanece funcional durante toda a transição; se a skill
-  embarcada apresentar regressão em campo, a SKILL.md antiga (CLI-first) volta
-  por revert enquanto o motor é corrigido.
-- Gatilho de rollback: qualquer cenário da bateria adversarial crítica (CR-*)
-  regredindo, ou benchmark < 100%.
+- The refactor is additive and versioned in git in the `onp-spec-driven` repo;
+  rollback = `git revert` of the range (no data migration — users' `.spec/`
+  doesn't change format).
+- The published npm CLI stays functional through the whole transition; if the
+  embedded skill shows a regression in the field, the old (CLI-first) SKILL.md
+  comes back via revert while the engine is fixed.
+- Rollback trigger: any critical adversarial-battery scenario (CR-*)
+  regressing, or benchmark < 100%.

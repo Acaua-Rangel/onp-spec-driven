@@ -1,9 +1,9 @@
-// Utilitários de texto compartilhados pelos parsers.
+// Text utilities shared by the parsers.
 
-// Normaliza traço: aceita —, – ou - como separador de título.
+// Normalizes the dash: accepts —, – or - as a title separator.
 export const DASH = '[—–-]';
 
-// IDs canônicos da gramática onp-spec-driven.
+// Canonical IDs of the onp-spec-driven grammar.
 export const ID_PATTERNS = {
   story: /US-\d{3,}/,
   ac: /AC-\d{3,}/,
@@ -14,13 +14,13 @@ export const ID_PATTERNS = {
 };
 
 export function splitLines(content) {
-  // NFC primeiro: arquivos criados no macOS podem vir em NFD ("Então" decomposto),
-  // o que quebraria o casamento das cláusulas Dado/Quando/Então.
+  // NFC first: files created on macOS may come in NFD form, which would break
+  // matching of accented content in a locale-independent way.
   return content.normalize('NFC').split(/\r?\n/);
 }
 
-// minúsculas + sem acentos — para casar status escritos por humanos
-// ("Concluída" ⇒ "concluida") sem furar o gate em silêncio.
+// lowercase + strip accents — to match statuses written by humans
+// ("Done"/"done") without silently slipping past the gate.
 export function foldStatus(text) {
   return text
     .toLowerCase()
@@ -28,12 +28,12 @@ export function foldStatus(text) {
     .replace(/[̀-ͯ]/g, '');
 }
 
-// Linha de tabela markdown → células (sem as bordas vazias).
+// Markdown table row → cells (without the empty borders).
 export function tableCells(line) {
   const trimmed = line.trim();
   if (!trimmed.startsWith('|')) return null;
   const cells = trimmed.split('|').map((c) => c.trim());
-  // remove primeira/última célula vazias criadas pelas bordas
+  // remove first/last empty cells created by the borders
   if (cells.length && cells[0] === '') cells.shift();
   if (cells.length && cells[cells.length - 1] === '') cells.pop();
   return cells;
@@ -43,7 +43,7 @@ export function isTableSeparator(cells) {
   return cells !== null && cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
 }
 
-// Converte glob simples (`**`, `*`, `?`) em RegExp de caminho posix.
+// Converts a simple glob (`**`, `*`, `?`) into a posix-path RegExp.
 export function globToRegExp(glob) {
   let re = '';
   let i = 0;
@@ -51,7 +51,7 @@ export function globToRegExp(glob) {
     const ch = glob[i];
     if (ch === '*') {
       if (glob[i + 1] === '*') {
-        // `**/` casa zero ou mais diretórios; `**` casa qualquer coisa
+        // `**/` matches zero or more directories; `**` matches anything
         if (glob[i + 2] === '/') {
           re += '(?:[^/]+/)*';
           i += 3;

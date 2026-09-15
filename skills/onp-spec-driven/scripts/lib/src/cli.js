@@ -1,27 +1,27 @@
-// CLI onp-spec — dispatch de comandos.
+// onp-spec CLI — command dispatch.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, chmodSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-  montarPlano,
-  renderPlanoMd,
-  renderPlanoSh,
-  renderPlanoHtml,
-  renderPlanoJson,
-  usaExecutorSh,
-  normalizarEsforco,
-  AGENTES,
-} from './core/plano.js';
-import { registrarEvento, podarLedger, lerStream, lerEventos, montarArvore } from './core/ledger.js';
+  buildPlan,
+  renderPlanMd,
+  renderPlanSh,
+  renderPlanHtml,
+  renderPlanJson,
+  usesShExecutor,
+  normalizeEffort,
+  AGENTS,
+} from './core/plan.js';
+import { recordEvent, pruneLedger, readStream, readEvents, buildTree } from './core/ledger.js';
 import {
-  resumoDeterministico,
-  contextoParaIa,
-  montarResumoAtual,
-  registrarResumo,
-  execucaoAlvo,
-  tabelaAndamento,
-} from './core/resumo.js';
+  deterministicSummary,
+  contextForAi,
+  buildCurrentSummary,
+  recordSummary,
+  targetRun,
+  progressTable,
+} from './core/summary.js';
 import { TASK_STATUSES } from './parsers/tasks.js';
 import { DASH, foldStatus } from './util/text.js';
 import { loadConfig, DEFAULT_CONFIG } from './config.js';
@@ -30,31 +30,32 @@ import { auditProject } from './core/audit.js';
 import { renderTerminal, renderJson, renderMarkdown } from './core/report.js';
 import { runVerify, gitRev } from './core/verify.js';
 import { scaffoldTests } from './core/scaffold.js';
+import { MEMORY_FILE_BY_AGENT, renderAgentMemory } from './core/memory.js';
 import { allAcs } from './parsers/spec.js';
-import { carregarSinais, registrarAchados, registrarVerify } from './core/sinais.js';
+import { loadSignals, recordFindings, recordVerify } from './core/signals.js';
 import {
-  carregarLicoes,
-  salvarLicoes,
-  adicionarLicao,
-  listarLicoes,
-  penalizarLicao,
-  podarLicoes,
-  sugerirLicoes,
-  LICOES_DEFAULTS,
-} from './core/licoes.js';
+  loadLessons,
+  saveLessons,
+  addLesson,
+  listLessons,
+  penalizeLesson,
+  pruneLessons,
+  suggestLessons,
+  LESSONS_DEFAULTS,
+} from './core/lessons.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, '..', 'templates');
 
-// Onde mora a skill: layout do repo (skills/onp-spec-driven) ou layout
-// embarcado (este arquivo em <skill>/scripts/lib/src → a skill é ../../..).
-// O fallback embarcado só vale se a SKILL.md encontrada for DO agente pedido
-// (marcador `agent:` no frontmatter) — senão instalaríamos a skill errada
-// anunciando sucesso.
+// Where the skill lives: repo layout (skills/onp-spec-driven) or embedded
+// layout (this file at <skill>/scripts/lib/src → the skill is ../../..).
+// The embedded fallback only counts if the SKILL.md found is FOR the requested
+// agent (the `agent:` marker in the frontmatter) — otherwise we would install
+// the wrong skill while announcing success.
 function skillAgentMarker(dir) {
   try {
-    const conteudo = readFileSync(path.join(dir, 'SKILL.md'), 'utf-8');
-    const frontmatter = conteudo.split(/^---\s*$/m)[1] || '';
+    const content = readFileSync(path.join(dir, 'SKILL.md'), 'utf-8');
+    const frontmatter = content.split(/^---\s*$/m)[1] || '';
     const m = frontmatter.match(/^\s*agent:\s*(\S+)/m);
     return m ? m[1] : null;
   } catch {
@@ -62,25 +63,29 @@ function skillAgentMarker(dir) {
   }
 }
 
-const SKILL_DIR_POR_AGENTE = {
+const SKILL_DIR_BY_AGENT = {
   claude: 'onp-spec-driven',
   antigravity: 'onp-spec-driven-antigravity',
   codex: 'onp-spec-driven-codex',
   cursor: 'onp-spec-driven-cursor',
+  copilot: 'onp-spec-driven-copilot',
+  gemini: 'onp-spec-driven-gemini',
 };
 
-// diretório de skills que cada agente lê DENTRO do projeto (o nome da pasta
-// da skill instalada é sempre onp-spec-driven — no Cursor o `name:` do
-// frontmatter TEM que ser igual ao nome da pasta)
-const SKILLS_DIR_PROJETO = {
+// the skills directory each agent reads INSIDE the project (the installed skill
+// folder is always named onp-spec-driven — in Cursor the frontmatter `name:`
+// MUST match the folder name)
+const SKILLS_DIR_PROJECT = {
   claude: '.claude',
   antigravity: '.agents',
   codex: '.agents',
   cursor: '.cursor',
+  copilot: '.github',
+  gemini: '.gemini',
 };
 
-function resolveSkillDir(agent = 'claude') {
-  const dirName = SKILL_DIR_POR_AGENTE[agent] || 'onp-spec-driven';
+export function resolveSkillDir(agent = 'claude') {
+  const dirName = SKILL_DIR_BY_AGENT[agent] || 'onp-spec-driven';
   const candidates = [
     path.join(__dirname, '..', 'skills', dirName),
     path.join(__dirname, '..', '..', '..'),
@@ -88,89 +93,89 @@ function resolveSkillDir(agent = 'claude') {
   for (const dir of candidates) {
     if (!existsSync(path.join(dir, 'SKILL.md'))) continue;
     const marker = skillAgentMarker(dir);
-    if (marker && marker !== agent) continue; // skill de outro agente — não serve
+    if (marker && marker !== agent) continue; // skill of another agent — no good
     return dir;
   }
   return null;
 }
 
-const HELP = `onp-spec — spec-anchored development (a especificação que continua verdadeira)
+const HELP = `onp-spec — spec-anchored development (the specification that stays true)
 
-uso: onp-spec <comando> [opções]
+usage: onp-spec <command> [options]
 
-comandos:
-  init [--preset base|lgpd-educacao] [--agents claude|antigravity|codex|cursor]
-                      cria .spec/, constituição e config no diretório atual
-                      (--agents também instala a skill do agente escolhido)
-  new <feature>       cria .spec/features/<feature>/ com spec.md e tasks.md
-  plano <feature> [--agents claude|antigravity|codex|cursor] [--paralelizar T-xxx,T-yyy]
-                  [--sequencial] [--modelo <modelo>] [--esforco <nível>]
-                      plano de execução. Default: agrupa tarefas em faixas
-                      PARALELAS (arquivos disjuntos → 1 worktree + 1 branch +
-                      1 janela limpa por faixa). Com --paralelizar: só as
-                      tarefas ESCOLHIDAS entram nas faixas (o resto roda uma
-                      após a outra, ao final). Com --sequencial: tudo uma
-                      tarefa após a outra, na árvore principal. QUAIS tarefas
-                      paralelizar é escolha do USUÁRIO (o agente pergunta
-                      antes de executar).
-                      · sempre: plano-execucao.md (faixas/ordem, branches,
-                        commits) + plano.json
-                      · claude: executar-tarefas.sh (claude -p headless com
-                        --model/--effort por tarefa e resumo de andamento a
-                        cada 1 min no terminal) + plano-execucao.html (visual)
-                      · codex: executar-tarefas.sh (codex exec headless com
-                        --json, sandbox e --model/model_reasoning_effort por
-                        tarefa) + plano-execucao.html (visual)
-                      · cursor: executar-tarefas.sh (CLI do Cursor headless:
-                        agent -p com --model por tarefa, stream-json e
-                        --force; esforço vai no slug do modelo) +
-                        plano-execucao.html (visual)
-                      · antigravity: prompts prontos p/ os agentes nativos
-                        (não depende de CLI nenhum)
-                      Custo é escolha do USUÁRIO: --modelo/--esforco travam
-                      modelo e esforço de TODAS as tarefas (vencem tasks.md e
-                      config) — o agente confirma modelos/esforços com o
-                      usuário ANTES de executar
-  resumo [feature] [--tabela] [--global] [--run <runId>]
-         [--gravar [--texto "..."] [--origem ia|motor]]
-                      o RESUMO GERAL DE ANDAMENTO em texto: o que está
-                      rodando agora, o que terminou, o que falhou. É o texto
-                      que o agente posta no chat a cada ~1 min enquanto houver
-                      execução. --tabela imprime a TABELA de andamento em
-                      markdown (uma linha por tarefa: onde roda, status e
-                      última ação) — pronta para colar no chat junto com o
-                      texto. --gravar registra no ledger (com --texto, é a
-                      IA/agente escrevendo; sem, vale o do motor).
-  tarefa <feature> <T-xxx> [status] [--modelo <modelo>] [--esforco <nível>]
-                      atualiza a tarefa no tasks.md: status (pendente |
-                      em-andamento | concluida) e/ou o custo dela (--modelo e
-                      --esforco definem Modelo:/Esforço: — regenere o plano
-                      depois)
-  audit [--ci] [--json] [--md <arquivo>]
-                      audita especificação ↔ tarefas ↔ testes ↔ código ↔ constituição
-                      exit 1 se houver erro (use no CI)
-  verify <feature>    roda os testes e grava a prova de cada critério de aceite
-                      (quem decide é o test runner)
+commands:
+  init [--preset base|lgpd-education] [--agents claude|antigravity|codex|cursor|copilot|gemini]
+                      creates .spec/, constitution and config in the current directory
+                      (--agents also installs the skill for the chosen agent
+                      and writes the agent's memory file: CLAUDE.md, AGENTS.md,
+                      .cursorrules, etc.)
+  new <feature-name>  creates .spec/features/<feature-name>/{spec.md,tasks.md}
+  plan <feature> [--agents claude|antigravity|codex|cursor|copilot|gemini]
+                 [--parallelize T-xxx,T-yyy] [--sequential]
+                 [--model <model>] [--effort low|medium|high|xhigh|max]
+                 [--tasks T-xxx,T-yyy]
+                      generates the PARALLEL EXECUTION PLAN across worktrees +
+                      execution artifacts for the chosen agent. Cost is
+                      the USER's choice (the agent asks before executing).
+                      · always: plan-execution.md (lanes/order, branches,
+                        commits) + plan.json
+                      · claude: run-tasks.sh (headless claude -p with
+                        --model/--effort per task and a progress summary every
+                      1 min in the terminal) + plan-execution.html (visual)
+                      · codex: run-tasks.sh (headless codex exec with
+                        --json, sandbox and --model/model_reasoning_effort per
+                        task) + plan-execution.html (visual)
+                      · cursor: run-tasks.sh (headless Cursor CLI:
+                        agent -p with --model per task, stream-json and
+                        --force; effort goes in the model slug) +
+                        plan-execution.html (visual)
+                      · antigravity/copilot/gemini: ready prompts for the native
+                        agents (depend on no CLI)
+                      Cost is the USER's choice: --model/--effort lock the
+                      model and effort of ALL tasks (override tasks.md and
+                      config) — the agent confirms models/efforts with the
+                      user BEFORE executing
+  summary [feature] [--table] [--global] [--run <runId>]
+         [--save [--text "..."] [--source ai|engine]]
+                      the OVERALL PROGRESS SUMMARY in text: what is running
+                      now, what finished, what failed. It is the text the
+                      agent posts in chat every ~1 min while a run is going.
+                      --table prints the progress TABLE in markdown (one row
+                      per task: where it runs, status and last action) — ready
+                      to paste in chat with the text. --save records it in the
+                      ledger (with --text, the AI/agent is writing; without,
+                      the engine's counts).
+  task <feature> <T-xxx> [status] [--model <model>] [--effort <level>]
+                      updates the task in tasks.md: status (pending |
+                      in-progress | done) and/or its cost (--model and
+                      --effort set Model:/Effort: — regenerate the plan
+                      afterwards)
+  audit [--ci] [--json] [--md <file>]
+                      audits specification ↔ tasks ↔ tests ↔ code ↔ constitution
+                      exit 1 on error (use in CI)
+  verify <feature>    runs the tests and records the proof of each acceptance
+                      criterion (the test runner decides)
   scaffold <feature> [--force]
-                      gera esqueleto de teste (que falha) para cada critério
-                      de aceite ainda sem teste
-  status              visão geral: features, critérios provados, suposições e
-                      perguntas abertas
-  assumptions         lista todas as suposições e perguntas com status
-  licoes <add|list|sugerir|penalizar|status>
-                      lições aprendidas COM LASTRO: só entra lição ancorada em
-                      sinal real do audit/verify; promoção mecânica ao recorrer
-                      em features distintas (detalhes: onp-spec licoes)
-  help                esta ajuda
+                      generates a (failing) test skeleton for each acceptance
+                      criterion that still has no test
+  status              overview: features, proven criteria, open assumptions
+                      and questions
+  assumptions         lists all assumptions and questions with their status
+  lessons <add|list|suggest|penalize|status>
+                      GROUNDED lessons learned: a lesson only enters if it is
+                      anchored to a real signal from audit/verify; mechanical
+                      promotion when it recurs across distinct features
+                      (details: onp-spec lessons)
+  help                this help
 
-fluxo típico:
-  onp-spec init --preset lgpd-educacao
-  onp-spec new entrega-dever-casa      # escreva histórias, critérios, suposições e perguntas
-  onp-spec scaffold entrega-dever-casa # cada critério vira um teste que falha
-  onp-spec plano entrega-dever-casa    # tarefas em faixas paralelas + artefatos de execução
-  ... execute o plano (ou implemente à mão) até os testes passarem ...
-  onp-spec verify entrega-dever-casa   # o test runner grava a prova
-  onp-spec audit --ci                  # 0 = especificação e código alinhados`;
+typical flow:
+  onp-spec init --preset lgpd-education
+  onp-spec new homework-delivery      # write stories, criteria, assumptions and questions
+  onp-spec scaffold homework-delivery # each criterion becomes a failing test
+  onp-spec plan homework-delivery     # tasks in parallel lanes + execution artifacts
+  ... execute the plan (or implement by hand) until the tests pass ...
+  onp-spec verify homework-delivery   # the test runner records the proof
+  onp-spec audit --ci                 # 0 = specification and code aligned`;
 
 function parseFlags(args) {
   const flags = {};
@@ -201,11 +206,11 @@ function fill(text, vars) {
   return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
 
-function cmdInit(rootDir, flags) {
+export function cmdInit(rootDir, flags, { resolveSkill = resolveSkillDir } = {}) {
   const preset = flags.preset || 'base';
-  const presetFile = `constituicao-${preset}.md`;
+  const presetFile = `constitution-${preset}.md`;
   if (!existsSync(path.join(TEMPLATES_DIR, presetFile))) {
-    console.error(`preset desconhecido: ${preset} (use: base, lgpd-educacao)`);
+    console.error(`unknown preset: ${preset} (use: base, lgpd-education)`);
     return 2;
   }
 
@@ -213,17 +218,17 @@ function cmdInit(rootDir, flags) {
   mkdirSync(path.join(specRoot, 'features'), { recursive: true });
   mkdirSync(path.join(specRoot, 'verification'), { recursive: true });
 
-  const constitutionPath = path.join(specRoot, 'constituicao.md');
+  const constitutionPath = path.join(specRoot, 'constitution.md');
   if (existsSync(constitutionPath)) {
-    console.log('· .spec/constituicao.md já existe — mantido');
+    console.log('· .spec/constitution.md already exists — kept');
   } else {
     writeFileSync(constitutionPath, template(presetFile));
-    console.log(`✔ .spec/constituicao.md criado (preset: ${preset})`);
+    console.log(`✔ .spec/constitution.md created (preset: ${preset})`);
   }
 
   const configPath = path.join(rootDir, 'onpspec.config.json');
   if (existsSync(configPath)) {
-    console.log('· onpspec.config.json já existe — mantido');
+    console.log('· onpspec.config.json already exists — kept');
   } else {
     const cfg = {
       testCommand: 'node --test',
@@ -232,7 +237,7 @@ function cmdInit(rootDir, flags) {
       srcGlobs: DEFAULT_CONFIG.srcGlobs,
     };
     writeFileSync(configPath, `${JSON.stringify(cfg, null, 2)}\n`);
-    console.log('✔ onpspec.config.json criado (testCommand: "node --test" — ajuste à sua stack)');
+    console.log('✔ onpspec.config.json created (testCommand: "node --test" — adjust to your stack)');
   }
 
   const gitignorePath = path.join(specRoot, 'verification', '.gitkeep');
@@ -240,55 +245,73 @@ function cmdInit(rootDir, flags) {
 
   if (flags.agents !== undefined) {
     const agent = flags.agents === true ? 'claude' : flags.agents;
-    if (!AGENTES.includes(agent)) {
-      console.error(`--agents desconhecido: "${flags.agents}" (use: ${AGENTES.join(', ')})`);
+    if (!AGENTS.includes(agent)) {
+      console.error(`unknown --agents: "${flags.agents}" (use: ${AGENTS.join(', ')})`);
       return 2;
     }
-    const rotulo = { claude: 'Claude Code', antigravity: 'Antigravity', codex: 'Codex', cursor: 'Cursor' }[agent];
-    // Cada agente lê seu diretório de skills no projeto (.claude, .cursor);
-    // Codex e Antigravity leem o MESMO (.agents/skills — o padrão cross-agent
-    // que o Codex adota). O marcador `agent:` no frontmatter diz de quem é a
-    // skill instalada.
-    const destRel = path.join(SKILLS_DIR_PROJETO[agent], 'skills', 'onp-spec-driven');
+    const label = { claude: 'Claude Code', antigravity: 'Antigravity', codex: 'Codex', cursor: 'Cursor', copilot: 'GitHub Copilot', gemini: 'Gemini' }[agent];
+    // Each agent reads its skills directory in the project (.claude, .cursor,
+    // .github). Codex and Antigravity read the SAME (.agents/skills
+    // — the cross-agent standard Codex adopts). The `agent:` marker in the
+    // frontmatter says which agent the installed skill belongs to.
+    const destRel = path.join(SKILLS_DIR_PROJECT[agent], 'skills', 'onp-spec-driven');
     const dest = path.join(rootDir, destRel);
-    const skillDir = resolveSkillDir(agent);
-    const marcadorExistente = skillAgentMarker(dest);
-    if (marcadorExistente && marcadorExistente !== agent) {
-      const nota =
-        SKILLS_DIR_PROJETO[agent] === '.agents' ? ' — Codex e Antigravity compartilham esse diretório.' : '.';
+    const skillDir = resolveSkill(agent);
+    const existingMarker = skillAgentMarker(dest);
+    if (existingMarker && existingMarker !== agent) {
+      const note =
+        SKILLS_DIR_PROJECT[agent] === '.agents' ? ' — Codex and Antigravity share this directory.' : '.';
       console.error(
-        `✘ ${destRel} já contém a skill do agente "${marcadorExistente}"${nota}\n` +
-          `  Para trocar de agente, remova a pasta antes: rm -rf ${destRel}`
+        `✘ ${destRel} already contains the skill of agent "${existingMarker}"${note}\n` +
+          `  To switch agents, remove the folder first: rm -rf ${destRel}`
       );
       return 2;
     }
     if (!skillDir) {
       console.log(
-        `· skill para ${rotulo} não encontrada junto a este motor — instale com: npx @onovoprogramador/onp-spec init --agents ${agent}`
+        `· skill for ${label} not found next to this engine — install with: npx @onovoprogramador/onp-spec init --agents ${agent}`
       );
     } else if (path.resolve(dest) === path.resolve(skillDir)) {
-      console.log(`· skill já instalada em ${destRel} — mantida`);
+      console.log(`· skill already installed at ${destRel} — kept`);
     } else {
       copyDirIfExists(skillDir, dest);
-      console.log(`✔ skill instalada em ${destRel} (${rotulo})`);
+      console.log(`✔ skill installed at ${destRel} (${label})`);
     }
-    // o Cursor lê .cursor/skills E .agents/skills nativamente (e .claude/
-    // .codex por compatibilidade) — duas variantes no mesmo projeto = duas
-    // skills com o MESMO nome, e o Cursor pode carregar a errada
+    // Cursor reads .cursor/skills AND .agents/skills natively (and .claude/
+    // .codex for compatibility) — two variants in the same project = two
+    // skills with the SAME name, and Cursor may load the wrong one
     if (agent === 'cursor') {
-      for (const outroDir of ['.claude', '.agents']) {
-        const marcadorOutro = skillAgentMarker(path.join(rootDir, outroDir, 'skills', 'onp-spec-driven'));
-        if (marcadorOutro && marcadorOutro !== 'cursor') {
+      for (const otherDir of ['.claude', '.agents']) {
+        const otherMarker = skillAgentMarker(path.join(rootDir, otherDir, 'skills', 'onp-spec-driven'));
+        if (otherMarker && otherMarker !== 'cursor') {
           console.log(
-            `⚠ este projeto também tem a skill do agente "${marcadorOutro}" em ${outroDir}/skills/onp-spec-driven — o Cursor lê esse diretório também e pode carregar a skill errada.\n` +
-              `  Se este projeto é do Cursor, remova a outra: rm -rf ${outroDir}/skills/onp-spec-driven`
+            `⚠ this project also has the skill of agent "${otherMarker}" at ${otherDir}/skills/onp-spec-driven — Cursor reads that directory too and may load the wrong skill.\n` +
+              `  If this is a Cursor project, remove the other: rm -rf ${otherDir}/skills/onp-spec-driven`
           );
         }
       }
     }
+
+    // memory/instructions file: the always-loaded reminder that this project
+    // is spec-anchored (never overwrite an existing one — it may hold the
+    // user's own project rules)
+    const memoryRel = MEMORY_FILE_BY_AGENT[agent];
+    if (memoryRel) {
+      const memoryPath = path.join(rootDir, memoryRel);
+      if (existsSync(memoryPath)) {
+        console.log(`· ${memoryRel} already exists — kept (add the spec-driven flow to it if missing)`);
+      } else {
+        mkdirSync(path.dirname(memoryPath), { recursive: true });
+        const enginePath = `${SKILLS_DIR_PROJECT[agent]}/skills/onp-spec-driven/scripts/onp-spec.mjs`;
+        writeFileSync(memoryPath, renderAgentMemory(agent, { label, enginePath }));
+        console.log(`✔ ${memoryRel} created (${label} reads it on every conversation)`);
+      }
+    }
   }
 
-  console.log('\npróximo passo: onp-spec new <nome-da-feature>');
+  console.log('\nnext step: ask your agent to specify the first feature — it runs the');
+  console.log('engine for you. To run it yourself (onp-spec is NOT a global command):');
+  console.log(`  ${engineCmd(rootDir)} new <feature-name>`);
   return 0;
 }
 
@@ -297,23 +320,36 @@ function copyDirIfExists(src, dest) {
   cpSync(src, dest, { recursive: true });
 }
 
+// The embedded engine is NOT a global `onp-spec` binary — it runs via
+// `node <skill>/scripts/onp-spec.mjs`. Returns the runnable command for THIS
+// project (the installed skill path) so the printed hints are copy-paste ready.
+export function engineCmd(rootDir) {
+  for (const dir of Object.values(SKILLS_DIR_PROJECT)) {
+    const entry = path.join(rootDir, dir, 'skills', 'onp-spec-driven', 'scripts', 'onp-spec.mjs');
+    if (existsSync(entry)) return `node ${path.relative(rootDir, entry).split(path.sep).join('/')}`;
+  }
+  const self = process.argv[1];
+  if (self && self.endsWith('.mjs')) return `node ${path.relative(rootDir, self).split(path.sep).join('/')}`;
+  return 'onp-spec';
+}
+
 function cmdNew(rootDir, name, flags) {
   if (!name) {
-    console.error('uso: onp-spec new <nome-da-feature> (kebab-case, ex.: entrega-dever-casa)');
+    console.error('usage: onp-spec new <feature-name> (kebab-case, e.g. homework-delivery)');
     return 2;
   }
   if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-    console.error(`nome inválido: "${name}" — use kebab-case (letras minúsculas, números e hífen)`);
+    console.error(`invalid name: "${name}" — use kebab-case (lowercase letters, digits and hyphen)`);
     return 2;
   }
   const dir = path.join(rootDir, '.spec', 'features', name);
   if (existsSync(path.join(dir, 'spec.md'))) {
-    console.error(`feature "${name}" já existe em .spec/features/${name}/`);
+    console.error(`feature "${name}" already exists in .spec/features/${name}/`);
     return 2;
   }
   mkdirSync(dir, { recursive: true });
 
-  // IDs únicos no projeto: continua a numeração a partir do maior ID existente
+  // globally unique IDs: continue numbering from the largest existing ID
   const config = loadConfig(rootDir);
   const project = loadProject(config);
   let maxUs = 0;
@@ -326,405 +362,412 @@ function cmdNew(rootDir, name, flags) {
     }
   }
   const pad = (n) => String(n).padStart(3, '0');
-  const titulo = name
+  const title = name
     .split('-')
     .map((w, i) => (i === 0 ? w[0].toUpperCase() + w.slice(1) : w))
     .join(' ');
 
   let spec = template('spec.md');
-  spec = fill(spec, { TITULO: titulo, FEATURE: name, TITULO_HISTORIA: '[título da história]' });
+  spec = fill(spec, { TITLE: title, FEATURE: name, STORY_TITLE: '[story title]' });
   spec = spec.replace('US-001', `US-${pad(maxUs + 1)}`).replace('AC-001', `AC-${pad(maxAc + 1)}`);
   writeFileSync(path.join(dir, 'spec.md'), spec);
 
   let tasks = template('tasks.md');
-  tasks = fill(tasks, { TITULO: titulo, FEATURE: name });
+  tasks = fill(tasks, { TITLE: title, FEATURE: name });
   tasks = tasks
     .replace('US-001, AC-001', `US-${pad(maxUs + 1)}, AC-${pad(maxAc + 1)}`);
   writeFileSync(path.join(dir, 'tasks.md'), tasks);
 
   console.log(`✔ .spec/features/${name}/spec.md`);
   console.log(`✔ .spec/features/${name}/tasks.md`);
-  console.log(`\npróximos passos:`);
-  console.log(`  1. escreva as histórias de usuário e os critérios de aceite (Dado/Quando/Então)`);
-  console.log(`     e PREENCHA as seções Suposições e Perguntas em aberto`);
-  console.log(`  2. onp-spec scaffold ${name}   # cada critério vira um teste executável`);
-  console.log(`  3. onp-spec audit              # veja o que falta`);
-  console.log(`  4. onp-spec plano ${name}      # com as tarefas escritas: plano de execução paralela`);
+  const cmd = engineCmd(rootDir);
+  console.log(`\nnext steps:`);
+  console.log(`  1. write the user stories and the acceptance criteria (Given/When/Then)`);
+  console.log(`     and FILL IN the Assumptions and Open questions sections`);
+  console.log(`  2. ${cmd} scaffold ${name}   # each criterion becomes an executable test`);
+  console.log(`  3. ${cmd} audit              # see what is missing`);
+  console.log(`  4. ${cmd} plan ${name}       # with the tasks written: parallel execution plan`);
   return 0;
 }
 
-// Detecta para qual agente gerar os artefatos do plano: flag explícita vence;
-// senão, o marcador `agent:` da própria skill embarcada é a fonte da verdade
-// (Codex e Antigravity compartilham .agents/, então o caminho sozinho não
-// basta); senão, o caminho do motor; senão, o que estiver instalado no
-// projeto; default: claude.
-function detectarAgente(rootDir, flag) {
+// Detects which agent to generate the plan artifacts for: an explicit flag
+// wins; otherwise, the `agent:` marker of the embedded skill itself is the
+// source of truth (Codex and Antigravity share .agents/, so the path alone is
+// not enough); otherwise, the engine path; otherwise, whatever is installed in
+// the project; default: claude.
+function detectAgent(rootDir, flag) {
   if (flag !== undefined && flag !== true) {
-    if (!AGENTES.includes(flag)) return { erro: `--agents desconhecido: "${flag}" (use: ${AGENTES.join(', ')})` };
+    if (!AGENTS.includes(flag)) return { error: `unknown --agents: "${flag}" (use: ${AGENTS.join(', ')})` };
     return { agent: flag };
   }
-  // motor embarcado: este arquivo mora em <skill>/scripts/lib/src
-  const marcadorProprio = skillAgentMarker(path.join(__dirname, '..', '..', '..'));
-  if (AGENTES.includes(marcadorProprio)) return { agent: marcadorProprio };
-  const segmentos = __dirname.split(path.sep);
-  if (segmentos.includes('.codex')) return { agent: 'codex' };
-  // só .cursor/skills conta: ~/.cursor/worktrees/<repo> é um checkout comum
-  // dos agentes paralelos do Cursor, não uma instalação da skill
-  const iCursor = segmentos.indexOf('.cursor');
-  if (iCursor !== -1 && segmentos[iCursor + 1] === 'skills') return { agent: 'cursor' };
-  if (segmentos.includes('.agents')) return { agent: 'antigravity' };
-  if (segmentos.includes('.claude')) return { agent: 'claude' };
-  const temClaude = existsSync(path.join(rootDir, '.claude', 'skills', 'onp-spec-driven'));
-  const marcadorProjeto = skillAgentMarker(path.join(rootDir, '.agents', 'skills', 'onp-spec-driven'));
-  if (AGENTES.includes(marcadorProjeto) && !temClaude) return { agent: marcadorProjeto };
-  const marcadorCursor = skillAgentMarker(path.join(rootDir, '.cursor', 'skills', 'onp-spec-driven'));
-  if (AGENTES.includes(marcadorCursor) && !temClaude) return { agent: marcadorCursor };
-  const temAg = existsSync(path.join(rootDir, '.agents', 'skills', 'onp-spec-driven'));
-  if (temAg && !temClaude) return { agent: 'antigravity' };
+  // embedded engine: this file lives at <skill>/scripts/lib/src
+  const ownMarker = skillAgentMarker(path.join(__dirname, '..', '..', '..'));
+  if (AGENTS.includes(ownMarker)) return { agent: ownMarker };
+  const segments = __dirname.split(path.sep);
+  if (segments.includes('.codex')) return { agent: 'codex' };
+  // only .cursor/skills counts: ~/.cursor/worktrees/<repo> is a common checkout
+  // of Cursor's parallel agents, not a skill installation
+  const iCursor = segments.indexOf('.cursor');
+  if (iCursor !== -1 && segments[iCursor + 1] === 'skills') return { agent: 'cursor' };
+  if (segments.includes('.github')) return { agent: 'copilot' };
+  if (segments.includes('.gemini')) return { agent: 'gemini' };
+  if (segments.includes('.agents')) return { agent: 'antigravity' };
+  if (segments.includes('.claude')) return { agent: 'claude' };
+  const hasClaude = existsSync(path.join(rootDir, '.claude', 'skills', 'onp-spec-driven'));
+  const projectMarker = skillAgentMarker(path.join(rootDir, '.agents', 'skills', 'onp-spec-driven'));
+  if (AGENTS.includes(projectMarker) && !hasClaude) return { agent: projectMarker };
+  const cursorMarker = skillAgentMarker(path.join(rootDir, '.cursor', 'skills', 'onp-spec-driven'));
+  if (AGENTS.includes(cursorMarker) && !hasClaude) return { agent: cursorMarker };
+  const copilotMarker = skillAgentMarker(path.join(rootDir, '.github', 'skills', 'onp-spec-driven'));
+  if (AGENTS.includes(copilotMarker) && !hasClaude) return { agent: copilotMarker };
+  const geminiMarker = skillAgentMarker(path.join(rootDir, '.gemini', 'skills', 'onp-spec-driven'));
+  if (AGENTS.includes(geminiMarker) && !hasClaude) return { agent: geminiMarker };
+  const hasAgents = existsSync(path.join(rootDir, '.agents', 'skills', 'onp-spec-driven'));
+  if (hasAgents && !hasClaude) return { agent: 'antigravity' };
   return { agent: 'claude' };
 }
 
-function gerarArtefatosPlano(project, featureName, agent, { sequencial = false, paralelizar, modelo, esforco } = {}) {
-  const plan = montarPlano(project, featureName, {
+function generatePlanArtifacts(project, featureName, agent, { sequential = false, parallelize, model, effort } = {}) {
+  const plan = buildPlan(project, featureName, {
     agent,
-    sequencial,
-    paralelizar,
-    modelo,
-    esforco,
+    sequential,
+    parallelize,
+    model,
+    effort,
     enginePath: process.argv[1],
   });
-  if (plan.erro) return plan;
+  if (plan.error) return plan;
   const dir = path.join(project.config.rootDir, plan.baseDir);
-  writeFileSync(path.join(dir, 'plano-execucao.md'), renderPlanoMd(plan));
-  const planoJson = renderPlanoJson(plan);
-  writeFileSync(path.join(dir, 'plano.json'), planoJson);
-  const gerados = [`${plan.baseDir}/plano-execucao.md`, `${plan.baseDir}/plano.json`];
-  if (usaExecutorSh(plan.agent)) {
-    const sh = path.join(dir, 'executar-tarefas.sh');
-    writeFileSync(sh, renderPlanoSh(plan));
+  writeFileSync(path.join(dir, 'plan-execution.md'), renderPlanMd(plan));
+  const planJson = renderPlanJson(plan);
+  writeFileSync(path.join(dir, 'plan.json'), planJson);
+  const generated = [`${plan.baseDir}/plan-execution.md`, `${plan.baseDir}/plan.json`];
+  if (usesShExecutor(plan.agent)) {
+    const sh = path.join(dir, 'run-tasks.sh');
+    writeFileSync(sh, renderPlanSh(plan));
     chmodSync(sh, 0o755);
-    writeFileSync(path.join(dir, 'plano-execucao.html'), renderPlanoHtml(plan));
-    gerados.push(`${plan.baseDir}/executar-tarefas.sh`, `${plan.baseDir}/plano-execucao.html`);
+    writeFileSync(path.join(dir, 'plan-execution.html'), renderPlanHtml(plan));
+    generated.push(`${plan.baseDir}/run-tasks.sh`, `${plan.baseDir}/plan-execution.html`);
   }
-  // registra a execução no ledger GLOBAL: é assim que o `onp-spec resumo`
-  // enxerga este projeto junto com os outros, mesmo antes de qualquer execução
-  registrarEvento({
-    tipo: 'plano',
+  // records the run in the GLOBAL ledger: this is how `onp-spec summary` sees
+  // this project alongside the others, even before any execution
+  recordEvent({
+    type: 'plan',
     runId: plan.runId,
-    projeto: plan.repoName,
-    projetoDir: project.config.rootDir,
+    project: plan.repoName,
+    projectDir: project.config.rootDir,
     feature: plan.feature,
     agent: plan.agent,
-    plano: JSON.parse(planoJson),
+    plan: JSON.parse(planJson),
   });
-  podarLedger();
-  plan.gerados = gerados;
+  pruneLedger();
+  plan.generated = generated;
   return plan;
 }
 
-// `onp-spec evento` — usado pelo executar-tarefas.sh para alimentar o ledger
-// global. Interno: não aparece na ajuda principal.
-function cmdEvento(flags) {
-  if (!flags.run || !flags.tipo) {
-    console.error('uso interno: onp-spec evento --run <runId> --tipo <plano|inicio|faixa|tarefa|gate|fim> [...]');
+// `onp-spec event` — used by run-tasks.sh to feed the global ledger.
+// Internal: does not appear in the main help.
+function cmdEvent(flags) {
+  if (!flags.run || !flags.type) {
+    console.error('internal usage: onp-spec event --run <runId> --type <plan|start|lane|task|gate|end> [...]');
     return 2;
   }
   const num = (v) => (v === undefined || v === true ? undefined : parseInt(v, 10));
-  registrarEvento({
+  recordEvent({
     runId: flags.run,
-    tipo: flags.tipo,
-    faixa: typeof flags.faixa === 'string' ? flags.faixa : undefined,
-    tarefa: typeof flags.tarefa === 'string' ? flags.tarefa : undefined,
-    estado: typeof flags.estado === 'string' ? flags.estado : undefined,
-    etapa: typeof flags.etapa === 'string' ? flags.etapa : undefined,
+    type: flags.type,
+    lane: typeof flags.lane === 'string' ? flags.lane : undefined,
+    task: typeof flags.task === 'string' ? flags.task : undefined,
+    state: typeof flags.state === 'string' ? flags.state : undefined,
+    step: typeof flags.step === 'string' ? flags.step : undefined,
     stream: typeof flags.stream === 'string' ? flags.stream : undefined,
-    escopo: typeof flags.escopo === 'string' ? flags.escopo : undefined,
+    scope: typeof flags.scope === 'string' ? flags.scope : undefined,
     exit: num(flags.exit),
-    tentativa: num(flags.tentativa),
+    attempt: num(flags.attempt),
   });
   return 0;
 }
 
-// `onp-spec stream-resumo <runId> <chave>` — uma linha legível no terminal a
-// partir do stream NDJSON (o stream completo fica no ledger para diagnóstico)
-function cmdStreamResumo(positional) {
-  const [runId, chave] = positional;
-  if (!runId || !chave) {
-    console.error('uso interno: onp-spec stream-resumo <runId> <chave>');
+// `onp-spec stream-summary <runId> <key>` — one readable line in the terminal
+// from the NDJSON stream (the full stream stays in the ledger for diagnostics)
+function cmdStreamSummary(positional) {
+  const [runId, key] = positional;
+  if (!runId || !key) {
+    console.error('internal usage: onp-spec stream-summary <runId> <key>');
     return 2;
   }
-  const { itens, resumo, existe } = lerStream(runId, chave);
-  if (!existe) {
-    console.log(`  (sem stream gravado para ${chave})`);
+  const { items, summary, exists } = readStream(runId, key);
+  if (!exists) {
+    console.log(`  (no stream recorded for ${key})`);
     return 0;
   }
-  const ferramentas = itens.filter((i) => i.tipo === 'ferramenta');
-  const contagem = {};
-  for (const f of ferramentas) contagem[f.nome] = (contagem[f.nome] || 0) + 1;
-  const usadas = Object.entries(contagem)
+  const tools = items.filter((i) => i.type === 'tool');
+  const count = {};
+  for (const f of tools) count[f.name] = (count[f.name] || 0) + 1;
+  const used = Object.entries(count)
     .map(([n, c]) => (c > 1 ? `${n}×${c}` : n))
     .join(', ');
-  const partes = [];
-  if (resumo) {
-    partes.push(resumo.status);
-    if (resumo.turnos != null) partes.push(`${resumo.turnos} turno(s)`);
-    if (resumo.duracaoMs != null) partes.push(`${(resumo.duracaoMs / 1000).toFixed(1)}s`);
-    if (resumo.custoUsd != null) partes.push(`US$ ${resumo.custoUsd.toFixed(4)}`);
+  const parts = [];
+  if (summary) {
+    parts.push(summary.status);
+    if (summary.turns != null) parts.push(`${summary.turns} turn(s)`);
+    if (summary.durationMs != null) parts.push(`${(summary.durationMs / 1000).toFixed(1)}s`);
+    if (summary.costUsd != null) parts.push(`US$ ${summary.costUsd.toFixed(4)}`);
   }
-  console.log(`  ↳ ${chave}: ${partes.join(' · ') || 'em andamento'}${usadas ? ` · ferramentas: ${usadas}` : ''}`);
+  console.log(`  ↳ ${key}: ${parts.join(' · ') || 'in progress'}${used ? ` · tools: ${used}` : ''}`);
   return 0;
 }
 
-function cmdPlano(project, positional, flags) {
+function cmdPlan(project, positional, flags) {
   const featureName = positional[0];
   if (!featureName) {
-    console.error('uso: onp-spec plano <feature> [--agents claude|antigravity|codex|cursor] [--paralelizar T-xxx,T-yyy] [--sequencial]');
+    console.error('usage: onp-spec plan <feature> [--agents claude|antigravity|codex|cursor|copilot|gemini] [--parallelize T-xxx,T-yyy] [--sequential]');
     return 2;
   }
-  const det = detectarAgente(project.config.rootDir, flags.agents);
-  if (det.erro) {
-    console.error(det.erro);
+  const det = detectAgent(project.config.rootDir, flags.agents);
+  if (det.error) {
+    console.error(det.error);
     return 2;
   }
-  if (flags.sequencial && flags.paralelizar) {
-    console.error('erro: use --paralelizar OU --sequencial — os dois juntos não fazem sentido');
+  if (flags.sequential && flags.parallelize) {
+    console.error('error: use --parallelize OR --sequential — the two together make no sense');
     return 2;
   }
-  if (det.agent === 'cursor' && typeof flags.esforco === 'string') {
+  if (det.agent === 'cursor' && typeof flags.effort === 'string') {
     console.log(
-      '⚠ o CLI do Cursor não tem flag de esforço — o valor fica registrado no plano, mas o nível vai no slug do modelo (ex.: gpt-5.6-terra-high)'
+      '⚠ the Cursor CLI has no effort flag — the value is recorded in the plan, but the level goes in the model slug (e.g. gpt-5.6-terra-high)'
     );
   }
-  if (flags.modelo === true) {
-    console.error('erro: --modelo precisa de um valor (ex.: --modelo gpt-5.6-luna)');
+  if (flags.model === true) {
+    console.error('error: --model needs a value (e.g. --model gpt-5.6-luna)');
     return 2;
   }
-  if (flags.esforco === true) {
-    console.error('erro: --esforco precisa de um valor (baixo|medio|alto|xalto|max)');
+  if (flags.effort === true) {
+    console.error('error: --effort needs a value (low|medium|high|xhigh|max)');
     return 2;
   }
-  const paralelizar =
-    flags.paralelizar === undefined
+  const parallelize =
+    flags.parallelize === undefined
       ? undefined
-      : flags.paralelizar === true
+      : flags.parallelize === true
         ? []
-        : String(flags.paralelizar)
+        : String(flags.parallelize)
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean);
-  const plan = gerarArtefatosPlano(project, featureName, det.agent, {
-    sequencial: Boolean(flags.sequencial),
-    paralelizar,
-    modelo: typeof flags.modelo === 'string' ? flags.modelo : undefined,
-    esforco: typeof flags.esforco === 'string' ? flags.esforco : undefined,
+  const plan = generatePlanArtifacts(project, featureName, det.agent, {
+    sequential: Boolean(flags.sequential),
+    parallelize,
+    model: typeof flags.model === 'string' ? flags.model : undefined,
+    effort: typeof flags.effort === 'string' ? flags.effort : undefined,
   });
-  if (plan.erro) {
-    console.error(`erro: ${plan.erro}`);
+  if (plan.error) {
+    console.error(`error: ${plan.error}`);
     return 2;
   }
 
-  const paralelas = plan.faixas.reduce((n, fx) => n + fx.tasks.length, 0);
-  if (plan.modo === 'sequencial') {
+  const parallel = plan.lanes.reduce((n, fx) => n + fx.tasks.length, 0);
+  if (plan.mode === 'sequential') {
     console.log(
-      `✔ plano de execução (${det.agent}, SEQUENCIAL — escolha do usuário): ` +
-        `${plan.sequenciais.length} tarefa(s), uma após a outra, na árvore principal`
+      `✔ execution plan (${det.agent}, SEQUENTIAL — user choice): ` +
+        `${plan.sequential.length} task(s), one after another, on the main tree`
     );
   } else {
     console.log(
-      `✔ plano de execução (${det.agent}): ${paralelas + plan.sequenciais.length} tarefa(s) — ` +
-        `${paralelas} PODEM RODAR EM PARALELO em ${plan.faixas.length} faixa(s) · ${plan.sequenciais.length} sequencial(is) · ${plan.ondas.length} onda(s)`
+      `✔ execution plan (${det.agent}): ${parallel + plan.sequential.length} task(s) — ` +
+        `${parallel} CAN RUN IN PARALLEL across ${plan.lanes.length} lane(s) · ${plan.sequential.length} sequential · ${plan.waves.length} wave(s)`
     );
-    if (plan.paralelizar) {
-      console.log(`  (seleção do usuário: ${plan.paralelizar.join(', ')} em paralelo; as demais rodam uma após a outra ao final)`);
+    if (plan.parallelize) {
+      console.log(`  (user selection: ${plan.parallelize.join(', ')} in parallel; the rest run one after another at the end)`);
     } else {
       console.log(
-        '  (o usuário quer escolher? regenere com: onp-spec plano ' +
+        '  (want the user to choose? regenerate with: onp-spec plan ' +
           featureName +
-          ' --paralelizar T-xxx,T-yyy — ou --sequencial para uma após a outra)'
+          ' --parallelize T-xxx,T-yyy — or --sequential for one after another)'
       );
     }
   }
-  console.log('\nonde está cada coisa:');
-  console.log(`  · plano (leia primeiro): ${plan.gerados[0]}`);
-  if (usaExecutorSh(plan.agent)) {
-    console.log(`  · executor headless:     ${plan.baseDir}/executar-tarefas.sh`);
-    console.log(`  · visual (leitura):      ${plan.baseDir}/plano-execucao.html`);
+  console.log('\nwhere everything is:');
+  console.log(`  · plan (read first): ${plan.generated[0]}`);
+  if (usesShExecutor(plan.agent)) {
+    console.log(`  · headless executor: ${plan.baseDir}/run-tasks.sh`);
+    console.log(`  · visual (read):     ${plan.baseDir}/plan-execution.html`);
   }
-  for (const a of plan.avisos) console.log(`  ⚠ ${a}`);
-  // custo é do usuário: no codex e no cursor, o agente apresenta modelo (e
-  // esforço, quando o CLI o aceita) por tarefa e CONFIRMA antes de executar
-  // (licença barata torra tokens fácil)
+  for (const a of plan.warnings) console.log(`  ⚠ ${a}`);
+  // cost is the user's: in codex and cursor, the agent presents the model (and
+  // effort, when the CLI accepts it) per task and CONFIRMS before executing
+  // (a cheap license burns tokens easily)
   if (det.agent === 'codex') {
-    console.log('\nmodelos e esforços deste plano — CONFIRME com o usuário antes de executar (os tokens são dele):');
-    const todas = [...plan.faixas.flatMap((fx) => fx.tasks), ...plan.sequenciais];
-    for (const t of todas) console.log(`  · ${t.id} — ${t.model} · esforço ${t.esforcoCli}`);
+    console.log('\nmodels and efforts of this plan — CONFIRM with the user before executing (the tokens are theirs):');
+    const all = [...plan.lanes.flatMap((fx) => fx.tasks), ...plan.sequential];
+    for (const t of all) console.log(`  · ${t.id} — ${t.model} · effort ${t.effortCli}`);
     console.log(
-      `  quer gastar menos? tudo: onp-spec plano ${featureName} --modelo gpt-5.6-luna --esforco baixo` +
-        `\n  por tarefa: onp-spec tarefa ${featureName} T-xxx --modelo <m> --esforco <nível> (e regenere o plano)`
+      `  want to spend less? everything: onp-spec plan ${featureName} --model gpt-5.6-luna --effort low` +
+        `\n  per task: onp-spec task ${featureName} T-xxx --model <m> --effort <level> (and regenerate the plan)`
     );
   }
   if (det.agent === 'cursor') {
-    console.log('\nmodelos deste plano — CONFIRME com o usuário antes de executar (os tokens são dele):');
-    const todas = [...plan.faixas.flatMap((fx) => fx.tasks), ...plan.sequenciais];
-    for (const t of todas) console.log(`  · ${t.id} — ${t.model}`);
+    console.log('\nmodels of this plan — CONFIRM with the user before executing (the tokens are theirs):');
+    const all = [...plan.lanes.flatMap((fx) => fx.tasks), ...plan.sequential];
+    for (const t of all) console.log(`  · ${t.id} — ${t.model}`);
     console.log(
-      '  (esforço no Cursor vai embutido no slug do modelo, ex.: gpt-5.6-terra-high — não existe flag)' +
-        `\n  quer gastar menos? tudo: onp-spec plano ${featureName} --modelo composer (uso incluído nos planos pagos do Cursor)` +
-        `\n  por tarefa: onp-spec tarefa ${featureName} T-xxx --modelo <m> (e regenere o plano)`
+      '  (effort in Cursor goes embedded in the model slug, e.g. gpt-5.6-terra-high — there is no flag)' +
+        `\n  want to spend less? everything: onp-spec plan ${featureName} --model composer (usage included in the paid Cursor plans)` +
+        `\n  per task: onp-spec task ${featureName} T-xxx --model <m> (and regenerate the plan)`
     );
   }
-  console.log('\npróximo passo:');
-  if (usaExecutorSh(plan.agent)) {
-    console.log(`  · executar: bash ${plan.baseDir}/executar-tarefas.sh`);
-    console.log('    (enquanto roda, o resumo geral de andamento sai a cada 1 min — repasse ao usuário)');
+  console.log('\nnext step:');
+  if (usesShExecutor(plan.agent)) {
+    console.log(`  · execute: bash ${plan.baseDir}/run-tasks.sh`);
+    console.log('    (while it runs, the overall progress summary comes out every 1 min — relay it to the user)');
   } else {
-    console.log(`  · abra um agente novo (janela limpa) por faixa e cole o prompt correspondente`);
-    console.log(`    do plano-execucao.md — depois merge + verify + audit, como descrito lá`);
+    console.log(`  · open a new agent (clean window) per lane and paste the matching prompt`);
+    console.log(`    from plan-execution.md — then merge + verify + audit, as described there`);
   }
   return 0;
 }
 
-// `onp-spec resumo` — o RESUMO GERAL DE ANDAMENTO. É o texto que o agente
-// posta no chat a cada ~1 minuto enquanto houver execução. Sem flags, imprime
-// (IA fresca do ledger > motor determinístico); com --gravar, registra no
-// ledger (--texto = escrito pela IA/agente do executor).
-function cmdResumo(config, positional, flags) {
+// `onp-spec summary` — the OVERALL PROGRESS SUMMARY. It is the text the agent
+// posts in chat every ~1 minute while a run is going. Without flags, it prints
+// (fresh AI from the ledger > deterministic engine); with --save, it records in
+// the ledger (--text = written by the executor's AI/agent).
+function cmdSummary(config, positional, flags) {
   const feature = positional[0] || null;
-  const filtro = flags.global ? {} : { projetoDir: config.rootDir, feature };
-  const projetos = montarArvore(lerEventos(), filtro);
+  const filter = flags.global ? {} : { projectDir: config.rootDir, feature };
+  const projects = buildTree(readEvents(), filter);
 
-  if (flags.contexto) {
-    console.log(contextoParaIa(projetos));
+  if (flags.context) {
+    console.log(contextForAi(projects));
     return 0;
   }
 
-  // a TABELA de andamento (markdown) — o agente cola no chat a cada ~1 min
-  if (flags.tabela) {
-    console.log(tabelaAndamento(projetos));
+  // the progress TABLE (markdown) — the agent pastes it in chat every ~1 min
+  if (flags.table) {
+    console.log(progressTable(projects));
     return 0;
   }
 
-  if (flags.gravar) {
-    const alvo = execucaoAlvo(projetos, { runId: typeof flags.run === 'string' ? flags.run : null });
-    if (!alvo) {
-      console.error('nenhuma execução no ledger para gravar o resumo — gere um plano primeiro (onp-spec plano <feature>)');
+  if (flags.save) {
+    const target = targetRun(projects, { runId: typeof flags.run === 'string' ? flags.run : null });
+    if (!target) {
+      console.error('no run in the ledger to save the summary — generate a plan first (onp-spec plan <feature>)');
       return 2;
     }
-    const temTexto = typeof flags.texto === 'string' && flags.texto.trim();
-    const texto = temTexto ? flags.texto : resumoDeterministico(projetos);
-    const origem = temTexto ? (flags.origem === 'motor' ? 'motor' : 'ia') : 'motor';
-    const r = registrarResumo({ runId: alvo.runId, texto, origem });
-    if (r.erro) {
-      console.error(`erro: ${r.erro}`);
+    const hasText = typeof flags.text === 'string';
+    const text = hasText ? flags.text : deterministicSummary(projects);
+    const source = hasText ? (flags.source === 'engine' ? 'engine' : 'ai') : 'engine';
+    const r = recordSummary({ runId: target.runId, text, source });
+    if (r.error) {
+      console.error(`error: ${r.error}`);
       return 2;
     }
-    console.log(`✔ resumo gravado (origem: ${r.origem}) para "${alvo.feature}"`);
-    console.log(r.texto);
+    console.log(`✔ summary saved (source: ${r.source}) for "${target.feature}"`);
+    console.log(r.text);
     return 0;
   }
 
-  console.log(montarResumoAtual(projetos).texto);
+  console.log(buildCurrentSummary(projects).text);
   return 0;
 }
 
-// insere ou substitui um campo de lista (- Modelo:/- Esforço:) dentro da
-// seção da tarefa em tasks.md — no MESMO formato que o parser lê; é assim
-// que o usuário ajusta o custo por tarefa sem editar arquivo na mão
-function definirCampoTarefa(linhas, taskId, matcher, rotulo, valor) {
-  const reTitulo = new RegExp(`^##\\s+${taskId}\\s*${DASH}\\s*`);
-  const inicio = linhas.findIndex((l) => reTitulo.test(l));
-  if (inicio === -1) return false;
-  let fim = linhas.length;
-  for (let i = inicio + 1; i < linhas.length; i++) {
-    if (/^##\s+/.test(linhas[i])) {
-      fim = i;
+// inserts or replaces a list field (- Model:/- Effort:) inside the task's
+// section in tasks.md — in the SAME format the parser reads; this is how the
+// user adjusts per-task cost without editing the file by hand
+function setTaskField(lines, taskId, matcher, label, value) {
+  const reTitle = new RegExp(`^##\\s+${taskId}\\s*${DASH}\\s*`);
+  const start = lines.findIndex((l) => reTitle.test(l));
+  if (start === -1) return false;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) {
+      end = i;
       break;
     }
   }
-  const reCampo = new RegExp(`^\\s*[-*]\\s*${matcher}\\s*:`, 'i');
-  for (let i = inicio + 1; i < fim; i++) {
-    if (reCampo.test(linhas[i])) {
-      linhas[i] = `- ${rotulo}: ${valor}`;
+  const reField = new RegExp(`^\\s*[-*]\\s*${matcher}\\s*:`, 'i');
+  for (let i = start + 1; i < end; i++) {
+    if (reField.test(lines[i])) {
+      lines[i] = `- ${label}: ${value}`;
       return true;
     }
   }
-  // campo ainda não existe: entra depois da última linha de lista da seção
-  let pos = inicio;
-  for (let i = inicio + 1; i < fim; i++) {
-    if (/^\s*[-*]\s/.test(linhas[i])) pos = i;
+  // field does not exist yet: goes after the last list line of the section
+  let pos = start;
+  for (let i = start + 1; i < end; i++) {
+    if (/^\s*[-*]\s/.test(lines[i])) pos = i;
   }
-  if (pos === inicio) linhas.splice(inicio + 1, 0, '', `- ${rotulo}: ${valor}`);
-  else linhas.splice(pos + 1, 0, `- ${rotulo}: ${valor}`);
+  if (pos === start) lines.splice(start + 1, 0, '', `- ${label}: ${value}`);
+  else lines.splice(pos + 1, 0, `- ${label}: ${value}`);
   return true;
 }
 
-function cmdTarefa(config, positional, flags = {}) {
+function cmdTask(config, positional, flags = {}) {
   const [featureName, taskId, statusRaw] = positional;
-  const modelo = typeof flags.modelo === 'string' ? flags.modelo : null;
-  const esforcoRaw = typeof flags.esforco === 'string' ? flags.esforco : null;
-  const USO =
-    'uso: onp-spec tarefa <feature> <T-xxx> [pendente|em-andamento|concluida] [--modelo <modelo>] [--esforco baixo|medio|alto|xalto|max]';
-  if (!featureName || !taskId || (!statusRaw && !modelo && !esforcoRaw) || flags.modelo === true || flags.esforco === true) {
-    console.error(USO);
+  const model = typeof flags.model === 'string' ? flags.model : null;
+  const effortRaw = typeof flags.effort === 'string' ? flags.effort : null;
+  const USAGE =
+    'usage: onp-spec task <feature> <T-xxx> [pending|in-progress|done] [--model <model>] [--effort low|medium|high|xhigh|max]';
+  if (!featureName || !taskId || (!statusRaw && !model && !effortRaw) || flags.model === true || flags.effort === true) {
+    console.error(USAGE);
     return 2;
   }
   let status = null;
   if (statusRaw) {
     status = foldStatus(statusRaw);
     if (!TASK_STATUSES.includes(status)) {
-      console.error(`status inválido: "${statusRaw}" (use: ${TASK_STATUSES.join(', ')})`);
+      console.error(`invalid status: "${statusRaw}" (use: ${TASK_STATUSES.join(', ')})`);
       return 2;
     }
   }
-  if (esforcoRaw && !normalizarEsforco(esforcoRaw)) {
-    console.error(`esforço inválido: "${esforcoRaw}" (use: baixo|medio|alto|xalto|max)`);
+  if (effortRaw && !normalizeEffort(effortRaw)) {
+    console.error(`invalid effort: "${effortRaw}" (use: low|medium|high|xhigh|max)`);
     return 2;
   }
   const tasksPath = path.join(config.rootDir, config.specDir, 'features', featureName, 'tasks.md');
   if (!existsSync(tasksPath)) {
-    console.error(`não achei ${config.specDir}/features/${featureName}/tasks.md`);
+    console.error(`could not find ${config.specDir}/features/${featureName}/tasks.md`);
     return 2;
   }
-  let conteudo = readFileSync(tasksPath, 'utf-8');
+  let content = readFileSync(tasksPath, 'utf-8');
   const re = new RegExp(`^(##\\s+${taskId}\\s*${DASH}\\s*.*?)(\\s*\\[[^\\]]+\\])?\\s*$`, 'm');
-  if (!re.test(conteudo)) {
-    console.error(`tarefa ${taskId} não encontrada em ${config.specDir}/features/${featureName}/tasks.md`);
+  if (!re.test(content)) {
+    console.error(`task ${taskId} not found in ${config.specDir}/features/${featureName}/tasks.md`);
     return 2;
   }
-  const mudancas = [];
+  const changes = [];
   if (status) {
-    conteudo = conteudo.replace(re, `$1 [${status}]`);
-    mudancas.push(`→ [${status}]`);
+    content = content.replace(re, `$1 [${status}]`);
+    changes.push(`→ [${status}]`);
   }
-  if (modelo || esforcoRaw) {
-    const linhas = conteudo.split('\n');
-    if (modelo) {
-      definirCampoTarefa(linhas, taskId, 'Modelo', 'Modelo', modelo);
-      mudancas.push(`Modelo: ${modelo}`);
+  if (model || effortRaw) {
+    const lines = content.split('\n');
+    if (model) {
+      setTaskField(lines, taskId, 'Model', 'Model', model);
+      changes.push(`Model: ${model}`);
     }
-    if (esforcoRaw) {
-      definirCampoTarefa(linhas, taskId, 'Esfor[cç]o', 'Esforço', esforcoRaw);
-      mudancas.push(`Esforço: ${esforcoRaw}`);
+    if (effortRaw) {
+      setTaskField(lines, taskId, 'Effort', 'Effort', effortRaw);
+      changes.push(`Effort: ${effortRaw}`);
     }
-    conteudo = linhas.join('\n');
+    content = lines.join('\n');
   }
-  writeFileSync(tasksPath, conteudo);
-  console.log(`✔ ${taskId} ${mudancas.join(' · ')} em ${config.specDir}/features/${featureName}/tasks.md`);
-  if (modelo || esforcoRaw) {
-    console.log(`· modelo/esforço mudou — regenere o plano: onp-spec plano ${featureName}`);
+  writeFileSync(tasksPath, content);
+  console.log(`✔ ${taskId} ${changes.join(' · ')} in ${config.specDir}/features/${featureName}/tasks.md`);
+  if (model || effortRaw) {
+    console.log(`· model/effort changed — regenerate the plan: onp-spec plan ${featureName}`);
   }
   return 0;
 }
 
 function cmdStatus(project) {
   if (project.errors.length) {
-    for (const e of project.errors) console.error(`erro: ${e}`);
+    for (const e of project.errors) console.error(`error: ${e}`);
     return 2;
   }
   const testFileSet = new Set(project.testFiles);
   const provenTags = project.annotations.specTags.filter((t) => testFileSet.has(t.file));
 
-  const cols = ['critérios', 'com-teste', 'provados', 'suposições?', 'perguntas?'];
+  const cols = ['criteria', 'with-test', 'proven', 'assumptions?', 'questions?'];
   const header =
     'feature'.padEnd(30) + ' ' + 'status'.padEnd(18) + cols.map((c) => ` ${c}`).join('');
   console.log(header);
@@ -732,15 +775,15 @@ function cmdStatus(project) {
   for (const feature of project.features) {
     const spec = feature.spec;
     if (!spec) {
-      console.log(`${feature.name.padEnd(30)} SEM SPEC`);
+      console.log(`${feature.name.padEnd(30)} NO SPEC`);
       continue;
     }
     const acs = allAcs(spec);
     const withTest = acs.filter((ac) => provenTags.some((t) => t.acId === ac.id)).length;
     const v = project.verifications[feature.name];
     const proven = acs.filter((ac) => v?.results?.[ac.id]?.status === 'pass').length;
-    const asmOpen = spec.assumptions.filter((a) => a.status === 'aberta').length;
-    const qOpen = spec.questions.filter((q) => q.status === 'aberta').length;
+    const asmOpen = spec.assumptions.filter((a) => a.status === 'open').length;
+    const qOpen = spec.questions.filter((q) => q.status === 'open').length;
     const vals = [acs.length, withTest, proven, asmOpen, qOpen];
     console.log(
       `${feature.name.padEnd(30)} ${(spec.status || '—').padEnd(18)}` +
@@ -748,8 +791,8 @@ function cmdStatus(project) {
     );
   }
   console.log(
-    '\nlegenda: critérios = critérios de aceite · com-teste = têm teste anotado (@spec:) ·' +
-      '\n         provados = PASS no último verify · suposições?/perguntas? = ainda abertas'
+    '\nlegend: criteria = acceptance criteria · with-test = have an annotated test (@spec:) ·' +
+      '\n        proven = PASS in the last verify · assumptions?/questions? = still open'
   );
   return 0;
 }
@@ -763,168 +806,169 @@ function cmdAssumptions(project) {
     any = true;
     console.log(`\n${feature.name}:`);
     for (const a of assumptions) {
-      const mark = a.status === 'aberta' ? '⚠' : a.status === 'invalidada' ? '✘' : '✔';
+      const mark = a.status === 'open' ? '⚠' : a.status === 'invalidated' ? '✘' : '✔';
       console.log(`  ${mark} ${a.id} [${a.status}] ${a.text}${a.resolution && a.resolution !== '—' ? ` → ${a.resolution}` : ''}`);
     }
     for (const q of questions) {
-      const mark = q.status === 'aberta' ? '?' : '✔';
+      const mark = q.status === 'open' ? '?' : '✔';
       console.log(`  ${mark} ${q.id} [${q.status}] ${q.text}${q.answer && q.answer !== '—' ? ` → ${q.answer}` : ''}`);
     }
   }
-  if (!any) console.log('nenhuma suposição ou pergunta registrada — isso é suspeito: quase toda feature esconde uma.');
+  if (!any) console.log('no assumption or question recorded — that is suspicious: almost every feature hides one.');
   return 0;
 }
 
-const HELP_LICOES = `onp-spec licoes — lições aprendidas com lastro mecânico
+const HELP_LESSONS = `onp-spec lessons — lessons learned with mechanical grounding
 
-O agente entra com o julgamento (frasear a regra geral); o motor valida o
-lastro: uma lição só entra se cita um sinal REAL registrado por audit/verify
-em .spec/verification/sinais.json. Sem sinal, é opinião — recusada.
+The agent brings the judgement (phrasing the general rule); the engine
+validates the grounding: a lesson only enters if it cites a REAL signal
+recorded by audit/verify in .spec/verification/signals.json. Without a signal,
+it is opinion — rejected.
 
-subcomandos:
-  add --sinal <CODIGO> --feature <feature> --fonte <AC-xxx|arquivo>
-      --texto "regra geral em uma frase" [--escopo <dominio>]
-                     registra uma lição (candidata); ao recorrer em outra
-                     feature, o motor promove a confirmada
-  list [--status confirmada|candidata|quarentena|todas] [--escopo <dominio>]
-       [--query <termo>] [--limite N]
-                     lições para carregar no Especificar/Projetar
-                     (default: só confirmadas, no máximo ${LICOES_DEFAULTS.limiteListagem})
-  sugerir [--limite N]
-                     mineração mecânica: sinais recorrentes em features
-                     distintas que ainda não têm lição
-  penalizar --id L-xxx
-                     a lição foi aplicada e a falha recorreu; 2 penalidades
-                     movem para quarentena
-  status             contagens por status + caminhos dos arquivos`;
+subcommands:
+  add --signal <CODE> --feature <feature> --source <AC-xxx|file>
+      --text "general rule in one sentence" [--scope <domain>]
+                     records a lesson (candidate); when it recurs in another
+                     feature, the engine promotes it to confirmed
+  list [--status confirmed|candidate|quarantine|all] [--scope <domain>]
+       [--query <term>] [--limit N]
+                     lessons to load in Specify/Design
+                     (default: confirmed only, at most ${LESSONS_DEFAULTS.listLimit})
+  suggest [--limit N]
+                     mechanical mining: signals recurring across distinct
+                     features that still have no lesson
+  penalize --id L-xxx
+                     the lesson was applied and the failure recurred; 2
+                     penalties move it to quarantine
+  status             counts per status + file paths`;
 
-function linhaLicao(l) {
-  const escopo = l.escopo ? ` · escopo ${l.escopo}` : '';
-  return `${l.id} [${l.status}] (${l.recorrencia} feature(s) · ${l.sinal}${escopo}) ${l.texto}`;
+function lessonLine(l) {
+  const scope = l.scope ? ` · scope ${l.scope}` : '';
+  return `${l.id} [${l.status}] (${l.recurrence} feature(s) · ${l.signal}${scope}) ${l.text}`;
 }
 
-function cmdLicoes(config, positional, flags) {
+function cmdLessons(config, positional, flags) {
   const specRoot = path.join(config.rootDir, config.specDir);
   if (!existsSync(specRoot)) {
-    console.error(`diretório ${config.specDir}/ não encontrado — rode \`onp-spec init\` primeiro`);
+    console.error(`directory ${config.specDir}/ not found — run \`onp-spec init\` first`);
     return 2;
   }
   const sub = positional[0];
-  const cfg = config.licoes;
-  const data = carregarLicoes(specRoot);
+  const cfg = config.lessons;
+  const data = loadLessons(specRoot);
 
   if (!sub || sub === 'help') {
-    console.log(HELP_LICOES);
+    console.log(HELP_LESSONS);
     return 0;
   }
 
   if (sub === 'add') {
-    const sinais = carregarSinais(specRoot);
-    const resultado = adicionarLicao(
+    const signals = loadSignals(specRoot);
+    const result = addLesson(
       data,
-      sinais,
+      signals,
       {
-        texto: flags.texto,
-        sinal: flags.sinal,
+        text: flags.text,
+        signal: flags.signal,
         feature: flags.feature,
-        fonte: flags.fonte,
-        escopo: flags.escopo,
+        source: flags.source,
+        scope: flags.scope,
       },
       cfg
     );
-    if (resultado.erro) {
-      console.error(`erro: ${resultado.erro}`);
+    if (result.error) {
+      console.error(`error: ${result.error}`);
       return 2;
     }
-    const podadas = podarLicoes(data, cfg);
-    salvarLicoes(specRoot, data);
-    const { licao, evento } = resultado;
-    const rotulo = {
-      criada: `✔ ${licao.id} registrada como candidata (1 feature) — vira confirmada ao recorrer em ${cfg.limiarPromocao - 1} outra(s)`,
-      reforcada: `✔ ${licao.id} reforçada (${licao.recorrencia} feature(s): ${licao.features.join(', ')})`,
-      promovida: `★ ${licao.id} PROMOVIDA a confirmada (${licao.features.join(', ')}) — entra no guia de Especificar/Projetar`,
-    }[evento];
-    console.log(rotulo);
-    if (podadas.length) console.log(`· podadas por estagnação: ${podadas.join(', ')}`);
+    const pruned = pruneLessons(data, cfg);
+    saveLessons(specRoot, data);
+    const { lesson, event } = result;
+    const label = {
+      created: `✔ ${lesson.id} recorded as candidate (1 feature) — becomes confirmed when it recurs in ${cfg.promotionThreshold - 1} other(s)`,
+      reinforced: `✔ ${lesson.id} reinforced (${lesson.recurrence} feature(s): ${lesson.features.join(', ')})`,
+      promoted: `★ ${lesson.id} PROMOTED to confirmed (${lesson.features.join(', ')}) — enters the Specify/Design guide`,
+    }[event];
+    console.log(label);
+    if (pruned.length) console.log(`· pruned by stagnation: ${pruned.join(', ')}`);
     return 0;
   }
 
   if (sub === 'list') {
-    const licoes = listarLicoes(data, {
-      status: flags.status || 'confirmada',
-      escopo: typeof flags.escopo === 'string' ? flags.escopo : null,
+    const lessons = listLessons(data, {
+      status: flags.status || 'confirmed',
+      scope: typeof flags.scope === 'string' ? flags.scope : null,
       query: typeof flags.query === 'string' ? flags.query : null,
-      limite: parseInt(flags.limite, 10) || cfg.limiteListagem,
+      limit: parseInt(flags.limit, 10) || cfg.listLimit,
     });
-    if (!licoes.length) {
+    if (!lessons.length) {
       console.log(
-        flags.status && flags.status !== 'confirmada'
-          ? 'nenhuma lição com esse filtro'
-          : 'nenhuma lição confirmada ainda — candidatas viram confirmadas ao recorrer em features distintas (onp-spec licoes list --status todas)'
+        flags.status && flags.status !== 'confirmed'
+          ? 'no lesson with that filter'
+          : 'no confirmed lesson yet — candidates become confirmed when they recur across distinct features (onp-spec lessons list --status all)'
       );
       return 0;
     }
-    for (const l of licoes) console.log(linhaLicao(l));
+    for (const l of lessons) console.log(lessonLine(l));
     return 0;
   }
 
-  if (sub === 'sugerir') {
-    const sinais = carregarSinais(specRoot);
-    const sugestoes = sugerirLicoes(data, sinais, cfg, {
-      limite: parseInt(flags.limite, 10) || 5,
+  if (sub === 'suggest') {
+    const signals = loadSignals(specRoot);
+    const suggestions = suggestLessons(data, signals, cfg, {
+      limit: parseInt(flags.limit, 10) || 5,
     });
-    if (!sugestoes.length) {
+    if (!suggestions.length) {
       console.log(
-        `nenhum sinal recorrente em ${cfg.limiarPromocao}+ features distintas — nada digno de lição por ora (caminho limpo não gera lição; isso é correto)`
+        `no signal recurring across ${cfg.promotionThreshold}+ distinct features — nothing worth a lesson for now (a clean path yields no lesson; that is correct)`
       );
       return 0;
     }
-    console.log('sinais recorrentes — o motor aponta ONDE vale uma lição; o fraseado é seu:');
-    for (const s of sugestoes) {
+    console.log('recurring signals — the engine points at WHERE a lesson is worth it; the phrasing is yours:');
+    for (const s of suggestions) {
       console.log(
-        `  ${s.sinal} — ${s.features.length} feature(s) distintas · ${s.ocorrencias} ocorrência(s) · lições existentes: ${s.licoesExistentes}`
+        `  ${s.signal} — ${s.features.length} distinct feature(s) · ${s.occurrences} occurrence(s) · existing lessons: ${s.existingLessons}`
       );
       console.log(`    features: ${s.features.slice(0, 6).join(', ')}${s.features.length > 6 ? ` (+${s.features.length - 6})` : ''}`);
       console.log(`    refs: ${s.refs.join(', ')}`);
     }
-    console.log('\nregistre com: onp-spec licoes add --sinal <CODIGO> --feature <f> --fonte <ref> --texto "..."');
+    console.log('\nrecord with: onp-spec lessons add --signal <CODE> --feature <f> --source <ref> --text "..."');
     return 0;
   }
 
-  if (sub === 'penalizar') {
+  if (sub === 'penalize') {
     if (typeof flags.id !== 'string') {
-      console.error('uso: onp-spec licoes penalizar --id L-xxx');
+      console.error('usage: onp-spec lessons penalize --id L-xxx');
       return 2;
     }
-    const resultado = penalizarLicao(data, flags.id, cfg);
-    if (resultado.erro) {
-      console.error(`erro: ${resultado.erro}`);
+    const result = penalizeLesson(data, flags.id, cfg);
+    if (result.error) {
+      console.error(`error: ${result.error}`);
       return 2;
     }
-    salvarLicoes(specRoot, data);
-    const { licao, evento } = resultado;
+    saveLessons(specRoot, data);
+    const { lesson, event } = result;
     console.log(
-      evento === 'quarentenada'
-        ? `✘ ${licao.id} movida para QUARENTENA (${licao.penalidades} penalidades) — sai do guia; revisão é do usuário`
-        : `⚠ ${licao.id} penalizada (${licao.penalidades}/${cfg.limiarQuarentena}) — mais ${cfg.limiarQuarentena - licao.penalidades} move para quarentena`
+      event === 'quarantined'
+        ? `✘ ${lesson.id} moved to QUARANTINE (${lesson.penalties} penalties) — leaves the guide; review is up to the user`
+        : `⚠ ${lesson.id} penalized (${lesson.penalties}/${cfg.quarantineThreshold}) — ${cfg.quarantineThreshold - lesson.penalties} more moves it to quarantine`
     );
     return 0;
   }
 
   if (sub === 'status') {
-    const contagem = { confirmada: 0, candidata: 0, quarentena: 0 };
-    for (const l of data.licoes) contagem[l.status] = (contagem[l.status] || 0) + 1;
-    const sinais = carregarSinais(specRoot);
+    const count = { confirmed: 0, candidate: 0, quarantine: 0 };
+    for (const l of data.lessons) count[l.status] = (count[l.status] || 0) + 1;
+    const signals = loadSignals(specRoot);
     console.log(
-      `lições: ${contagem.confirmada} confirmada(s) · ${contagem.candidata} candidata(s) · ${contagem.quarentena} em quarentena`
+      `lessons: ${count.confirmed} confirmed · ${count.candidate} candidate(s) · ${count.quarantine} quarantined`
     );
-    console.log(`sinais no histórico: ${Object.keys(sinais.sinais).length} ponto(s) de falha distintos`);
-    console.log(`arquivos: ${config.specDir}/licoes.json (canônico) · ${config.specDir}/LICOES.md (leitura)`);
+    console.log(`signals in the history: ${Object.keys(signals.signals).length} distinct failure point(s)`);
+    console.log(`files: ${config.specDir}/lessons.json (canonical) · ${config.specDir}/LESSONS.md (readable)`);
     return 0;
   }
 
-  console.error(`subcomando desconhecido: licoes ${sub}\n`);
-  console.log(HELP_LICOES);
+  console.error(`unknown subcommand: lessons ${sub}\n`);
+  console.log(HELP_LESSONS);
   return 2;
 }
 
@@ -933,18 +977,18 @@ export async function run(argv) {
   const { flags, positional } = parseFlags(rest);
   const rootDir = process.cwd();
 
-  if (!command || command === 'help' || flags.help) {
+  if (!command || command === 'help' || command === '--help' || command === '-h' || flags.help) {
     console.log(HELP);
     return 0;
   }
 
-  if (command === 'version' || flags.version) {
+  if (command === 'version' || command === '--version' || command === '-v' || flags.version) {
     try {
       const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
       console.log(pkg.version);
     } catch {
-      // motor embarcado na skill não carrega package.json
-      console.log('embarcada (skill onp-spec-driven)');
+      // the skill-embedded engine does not carry package.json
+      console.log('embedded (onp-spec-driven skill)');
     }
     return 0;
   }
@@ -954,20 +998,20 @@ export async function run(argv) {
 
   const config = loadConfig(rootDir);
 
-  // lições não precisam do projeto carregado — em repos grandes, listar o
-  // guia no início do Especificar tem que ser barato
-  if (command === 'licoes') return cmdLicoes(config, positional, flags);
-  // tarefa idem: edição pontual de status/modelo/esforço no tasks.md
-  if (command === 'tarefa') return cmdTarefa(config, positional, flags);
-  // comandos internos do executar-tarefas.sh (alimentam/leem o ledger global)
-  if (command === 'evento') return cmdEvento(flags);
-  if (command === 'stream-resumo') return cmdStreamResumo(positional);
-  // resumo geral de andamento: só precisa do ledger, não do projeto carregado
-  if (command === 'resumo') return cmdResumo(config, positional, flags);
+  // lessons do not need the project loaded — in large repos, listing the guide
+  // at the start of Specify has to be cheap
+  if (command === 'lessons') return cmdLessons(config, positional, flags);
+  // task likewise: a targeted edit of status/model/effort in tasks.md
+  if (command === 'task') return cmdTask(config, positional, flags);
+  // internal commands of run-tasks.sh (feed/read the global ledger)
+  if (command === 'event') return cmdEvent(flags);
+  if (command === 'stream-summary') return cmdStreamSummary(positional);
+  // overall progress summary: only needs the ledger, not the loaded project
+  if (command === 'summary') return cmdSummary(config, positional, flags);
 
   const project = loadProject(config);
 
-  if (command === 'plano') return cmdPlano(project, positional, flags);
+  if (command === 'plan') return cmdPlan(project, positional, flags);
 
   if (command === 'audit') {
     const audit = auditProject(project, { ci: Boolean(flags.ci) });
@@ -977,17 +1021,17 @@ export async function run(argv) {
       console.log(renderTerminal(audit));
     }
     if (flags.md) {
-      const outPath = typeof flags.md === 'string' ? flags.md : '.spec/AUDITORIA.md';
+      const outPath = typeof flags.md === 'string' ? flags.md : '.spec/AUDIT.md';
       writeFileSync(path.join(rootDir, outPath), renderMarkdown(audit));
-      console.log(`relatório salvo em ${outPath}`);
+      console.log(`report saved to ${outPath}`);
     }
-    const registrados = registrarAchados(project.specRoot, audit.findings, {
+    const recorded = recordFindings(project.specRoot, audit.findings, {
       gitRev: gitRev(rootDir),
-      ...config.licoes,
+      ...config.lessons,
     });
-    if (registrados) {
+    if (recorded) {
       console.log(
-        `${registrados} sinal(is) registrados no histórico — depois de corrigir: onp-spec licoes sugerir`
+        `${recorded} signal(s) recorded in the history — after fixing: onp-spec lessons suggest`
       );
     }
     return audit.exitCode;
@@ -996,45 +1040,45 @@ export async function run(argv) {
   if (command === 'verify') {
     const featureName = positional[0];
     if (!featureName) {
-      console.error('uso: onp-spec verify <feature>');
+      console.error('usage: onp-spec verify <feature>');
       return 2;
     }
     const { record, hint } = runVerify(project, featureName);
-    const sinaisFalha = registrarVerify(project.specRoot, record, config.licoes);
+    const failSignals = recordVerify(project.specRoot, record, config.lessons);
     const total = Object.keys(record.results).length;
     const passed = Object.values(record.results).filter((r) => r.status === 'pass').length;
     console.log(
-      `verify ${featureName}: ${passed}/${total} critério(s) de aceite com prova PASS · ${record.testsParsed} teste(s) lidos · exit ${record.exitCode}`
+      `verify ${featureName}: ${passed}/${total} acceptance criteria with PASS proof · ${record.testsParsed} test(s) read · exit ${record.exitCode}`
     );
     for (const [acId, r] of Object.entries(record.results)) {
-      const mark = r.status === 'pass' ? '✔' : r.status === 'skip' ? '○ SKIP (não é prova)' : '✘';
+      const mark = r.status === 'pass' ? '✔' : r.status === 'skip' ? '○ SKIP (not proof)' : '✘';
       console.log(`  ${mark} ${acId} ${r.testName ? `— ${r.testName}` : ''}`);
     }
-    if (hint) console.log(`  dica: ${hint}`);
+    if (hint) console.log(`  hint: ${hint}`);
     const principles = Object.entries(record.principles || {});
     if (principles.length) {
-      console.log('  princípios:');
+      console.log('  principles:');
       for (const [pId, r] of principles) {
         console.log(`  ${r.status === 'pass' ? '✔' : '✘'} ${pId} — ${r.testName}`);
       }
     }
-    if (sinaisFalha) {
-      console.log(`  ${sinaisFalha} sinal(is) de falha/skip registrados no histórico`);
+    if (failSignals) {
+      console.log(`  ${failSignals} fail/skip signal(s) recorded in the history`);
     }
-    console.log(`prova gravada em .spec/verification/${featureName}.json — rode \`onp-spec audit\``);
+    console.log(`proof recorded in .spec/verification/${featureName}.json — run \`onp-spec audit\``);
     return passed === total && total > 0 ? 0 : 1;
   }
 
   if (command === 'scaffold') {
     const featureName = positional[0];
     if (!featureName) {
-      console.error('uso: onp-spec scaffold <feature> [--force]');
+      console.error('usage: onp-spec scaffold <feature> [--force]');
       return 2;
     }
     const result = scaffoldTests(project, featureName, { force: Boolean(flags.force) });
     if (result.created) {
-      console.log(`✔ ${result.created} criado com ${result.pending} teste(s)-esqueleto (todos FALHAM até você implementar)`);
-      console.log(`  critérios cobertos: ${result.acIds.join(', ')}`);
+      console.log(`✔ ${result.created} created with ${result.pending} skeleton test(s) (all FAIL until you implement)`);
+      console.log(`  criteria covered: ${result.acIds.join(', ')}`);
     } else {
       console.log(result.message);
     }
@@ -1044,7 +1088,7 @@ export async function run(argv) {
   if (command === 'status') return cmdStatus(project);
   if (command === 'assumptions') return cmdAssumptions(project);
 
-  console.error(`comando desconhecido: ${command}\n`);
+  console.error(`unknown command: ${command}\n`);
   console.log(HELP);
   return 2;
 }

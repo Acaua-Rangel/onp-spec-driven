@@ -1,0 +1,110 @@
+// Loads the full project state: specs of all features, tasks, constitution,
+// annotations in tests/code and verify results.
+
+import { readdirSync, readFileSync, existsSync, statSync } from 'fs';
+import path from 'path';
+import { parseSpec } from '../parsers/spec.js';
+import { parseTasks } from '../parsers/tasks.js';
+import { parseConstitution } from '../parsers/constitution.js';
+import { walkFiles, scanAnnotations } from '../parsers/annotations.js';
+
+export function loadProject(config) {
+  const { rootDir, specDir } = config;
+  const specRoot = path.join(rootDir, specDir);
+  const project = {
+    config,
+    specRoot,
+    features: [],
+    constitution: null,
+    annotations: { specTags: [], principleTags: [] },
+    srcFiles: [],
+    testFiles: [],
+    verifications: {},
+    errors: [],
+  };
+
+  if (!existsSync(specRoot)) {
+    project.errors.push(
+      `directory ${specDir}/ not found — run \`onp-spec init\` first`
+    );
+    return project;
+  }
+
+  // constitution
+  const constitutionPath = path.join(specRoot, 'constitution.md');
+  if (existsSync(constitutionPath)) {
+    project.constitution = parseConstitution(readFileSync(constitutionPath, 'utf-8'), {
+      file: path.join(specDir, 'constitution.md'),
+    });
+  }
+
+  // features
+  const featuresRoot = path.join(specRoot, 'features');
+  if (existsSync(featuresRoot)) {
+    const dirs = readdirSync(featuresRoot, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+    for (const name of dirs) {
+      const featureDir = path.join(featuresRoot, name);
+      const feature = { name, dir: featureDir, spec: null, tasks: null };
+      const specPath = path.join(featureDir, 'spec.md');
+      if (existsSync(specPath)) {
+        feature.spec = parseSpec(readFileSync(specPath, 'utf-8'), {
+          file: path.join(specDir, 'features', name, 'spec.md'),
+        });
+      }
+      const tasksPath = path.join(featureDir, 'tasks.md');
+      if (existsSync(tasksPath)) {
+        feature.tasks = parseTasks(readFileSync(tasksPath, 'utf-8'), {
+          file: path.join(specDir, 'features', name, 'tasks.md'),
+        });
+      }
+      project.features.push(feature);
+    }
+  }
+
+  // verifications (result of `onp-spec verify`)
+  const verificationDir = path.join(specRoot, 'verification');
+  if (existsSync(verificationDir)) {
+    for (const entry of readdirSync(verificationDir)) {
+      if (!entry.endsWith('.json')) continue;
+      try {
+        project.verifications[entry.replace(/\.json$/, '')] = JSON.parse(
+          readFileSync(path.join(verificationDir, entry), 'utf-8')
+        );
+      } catch {
+        project.errors.push(`verification/${entry} corrupted — run verify again`);
+      }
+    }
+  }
+
+  // test and source files
+  project.testFiles = walkFiles(rootDir, {
+    includeGlobs: config.testGlobs,
+    ignoreGlobs: config.ignoreGlobs,
+  });
+  project.srcFiles = walkFiles(rootDir, {
+    includeGlobs: config.srcGlobs,
+    ignoreGlobs: [...config.ignoreGlobs, ...config.testGlobs],
+  });
+  project.annotations = scanAnnotations(rootDir, [
+    ...new Set([...project.testFiles, ...project.srcFiles]),
+  ]);
+
+  return project;
+}
+
+// Most recent modification timestamp among the given files (ms epoch).
+export function latestMtime(rootDir, files) {
+  let latest = 0;
+  for (const rel of files) {
+    try {
+      const st = statSync(path.join(rootDir, rel));
+      if (st.mtimeMs > latest) latest = st.mtimeMs;
+    } catch {
+      // file listed but non-existent — handled by another finding
+    }
+  }
+  return latest;
+}

@@ -1,26 +1,26 @@
-// Parser de spec.md — extrai histórias (US), critérios de aceite (AC),
-// suposições (ASM) e perguntas em aberto (Q).
+// Parser for spec.md — extracts user stories (US), acceptance criteria (AC),
+// assumptions (ASM) and open questions (Q).
 //
-// A gramática é markdown humano com âncoras mecânicas:
-//   ### US-001 — Título
-//   #### AC-001 — Título
-//   - **Dado** ... / - **Quando** ... / - **Então** ...
-//   Tabelas em "## Suposições" e "## Perguntas em aberto".
+// The grammar is human markdown with mechanical anchors:
+//   ### US-001 — Title
+//   #### AC-001 — Title
+//   - **Given** ... / - **When** ... / - **Then** ...
+//   Tables under "## Assumptions" and "## Open questions".
 
 import { DASH, splitLines, tableCells, isTableSeparator } from '../util/text.js';
 
 const RE_META = /^>\s*(feature|status)\s*:\s*(.+?)\s*$/;
 const RE_STORY = new RegExp(`^###\\s+(US-\\d{3,})\\s*${DASH}\\s*(.+?)\\s*$`);
 const RE_AC = new RegExp(`^####\\s+(AC-\\d{3,})\\s*${DASH}\\s*(.+?)\\s*$`);
-// aceita indentação (lista aninhada), marcador -/* e keyword sem case rígido
-const RE_GWT = /^\s*[-*]\s*\*\*(Dado|Quando|Então|Entao|E)\*\*\s*(.+?)\s*$/i;
+// accepts indentation (nested list), -/* marker and case-insensitive keyword
+const RE_GWT = /^\s*[-*]\s*\*\*(Given|When|Then|And)\*\*\s*(.+?)\s*$/i;
 const RE_SECTION = /^##\s+(.+?)\s*$/;
-// IDs de 1-2 dígitos em headings: quase-IDs que a gramática não reconhece
+// 1-2 digit IDs in headings: near-IDs the grammar does not recognize
 const RE_SHORT_ID = /^#{3,4}\s+((?:US|AC)-\d{1,2})\b/;
 
-export const SPEC_STATUSES = ['rascunho', 'pronta', 'em-implementacao', 'implementada', 'auditada'];
-export const ASM_STATUSES = ['aberta', 'confirmada', 'invalidada'];
-export const Q_STATUSES = ['aberta', 'respondida'];
+export const SPEC_STATUSES = ['draft', 'ready', 'in-implementation', 'implemented', 'audited'];
+export const ASM_STATUSES = ['open', 'confirmed', 'invalidated'];
+export const Q_STATUSES = ['open', 'answered'];
 
 function normalizeSection(title) {
   return title
@@ -40,12 +40,12 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
     assumptions: [],
     questions: [],
     parseIssues: [],
-    sections: { suposicoes: false, perguntas: false },
+    sections: { assumptions: false, questions: false },
   };
 
   let currentStory = null;
   let currentAc = null;
-  let currentSection = null; // 'suposicoes' | 'perguntas' | other
+  let currentSection = null; // 'assumptions' | 'questions' | other
   let inTableHeader = false;
 
   for (let i = 0; i < lines.length; i++) {
@@ -70,12 +70,12 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
     const section = line.match(RE_SECTION);
     if (section) {
       const norm = normalizeSection(section[1]);
-      if (norm.startsWith('suposic')) {
-        currentSection = 'suposicoes';
-        spec.sections.suposicoes = true;
-      } else if (norm.startsWith('perguntas')) {
-        currentSection = 'perguntas';
-        spec.sections.perguntas = true;
+      if (norm.startsWith('assumption')) {
+        currentSection = 'assumptions';
+        spec.sections.assumptions = true;
+      } else if (norm.startsWith('question') || norm.startsWith('open question')) {
+        currentSection = 'questions';
+        spec.sections.questions = true;
       } else currentSection = norm;
       currentStory = null;
       currentAc = null;
@@ -86,9 +86,9 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
     const shortId = line.match(RE_SHORT_ID);
     if (shortId) {
       spec.parseIssues.push({
-        code: 'ID_CURTO',
+        code: 'ID_SHORT',
         line: lineNo,
-        message: `"${shortId[1]}" tem menos de 3 dígitos e não é reconhecido — use ${shortId[1].replace(/\d+$/, (d) => d.padStart(3, '0'))}`,
+        message: `"${shortId[1]}" has fewer than 3 digits and is not recognized — use ${shortId[1].replace(/\d+$/, (d) => d.padStart(3, '0'))}`,
       });
     }
 
@@ -121,9 +121,9 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
         currentStory.acs.push(currentAc);
       } else {
         spec.parseIssues.push({
-          code: 'AC_FORA_DE_US',
+          code: 'AC_OUTSIDE_US',
           line: lineNo,
-          message: `${ac[1]} definido fora de uma história de usuário (US)`,
+          message: `${ac[1]} defined outside a user story (US)`,
         });
       }
       continue;
@@ -133,11 +133,11 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
     if (gwt && currentAc) {
       const kind = gwt[1].toLowerCase();
       const text = gwt[2];
-      if (kind === 'dado') currentAc.given.push(text);
-      else if (kind === 'quando') currentAc.when.push(text);
-      else if (kind === 'então' || kind === 'entao') currentAc.then.push(text);
-      else if (kind === 'e') {
-        // "E" continua a última cláusula preenchida
+      if (kind === 'given') currentAc.given.push(text);
+      else if (kind === 'when') currentAc.when.push(text);
+      else if (kind === 'then') currentAc.then.push(text);
+      else if (kind === 'and') {
+        // "And" continues the last filled clause
         if (currentAc.then.length) currentAc.then.push(text);
         else if (currentAc.when.length) currentAc.when.push(text);
         else currentAc.given.push(text);
@@ -145,12 +145,12 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
       continue;
     }
 
-    if (currentSection === 'suposicoes' || currentSection === 'perguntas') {
+    if (currentSection === 'assumptions' || currentSection === 'questions') {
       const cells = tableCells(line);
       if (cells === null) continue;
       if (isTableSeparator(cells)) continue;
       const first = cells[0] || '';
-      if (currentSection === 'suposicoes') {
+      if (currentSection === 'assumptions') {
         if (/^ASM-\d{3,}$/.test(first)) {
           spec.assumptions.push({
             id: first,
@@ -160,12 +160,12 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
             line: lineNo,
           });
         } else if (!inTableHeader && first.toLowerCase() !== 'id') {
-          // primeira linha não-separadora sem ID válido: só sinaliza se parecer dado
+          // first non-separator row without a valid ID: only flag if it looks like data
           if (first && first.toLowerCase() !== 'id') {
             spec.parseIssues.push({
-              code: 'ASM_ID_INVALIDO',
+              code: 'ASM_ID_INVALID',
               line: lineNo,
-              message: `linha de suposição sem ID ASM-xxx válido: "${first}"`,
+              message: `assumption row without a valid ASM-xxx ID: "${first}"`,
             });
           }
         }
@@ -181,9 +181,9 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
           });
         } else if (first && first.toLowerCase() !== 'id' && !inTableHeader) {
           spec.parseIssues.push({
-            code: 'Q_ID_INVALIDO',
+            code: 'Q_ID_INVALID',
             line: lineNo,
-            message: `linha de pergunta sem ID Q-xxx válido: "${first}"`,
+            message: `question row without a valid Q-xxx ID: "${first}"`,
           });
         }
         if (first.toLowerCase() === 'id') inTableHeader = true;
@@ -199,7 +199,7 @@ export function parseSpec(content, { file = 'spec.md' } = {}) {
   return spec;
 }
 
-// Lista achatada de todos os ACs da spec.
+// Flat list of all ACs in the spec.
 export function allAcs(spec) {
   return spec.stories.flatMap((s) => s.acs);
 }

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { run } from '../src/cli.js';
 
-// process.exitCode (e não process.exit()): garante o flush do stdout em pipes.
-// Com process.exit(), saídas grandes (audit --json) eram truncadas em ~8KB.
+// process.exitCode (not process.exit()): guarantees stdout flush on pipes.
+// With process.exit(), large outputs (audit --json) were truncated at ~8KB.
 run(process.argv.slice(2)).then(
   (code) => {
     process.exitCode = code;
   },
   (err) => {
-    console.error(`erro: ${err.message}`);
+    console.error(`error: ${err.message}`);
     process.exitCode = 2;
   }
 );

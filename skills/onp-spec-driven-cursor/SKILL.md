@@ -1,6 +1,6 @@
 ---
 name: onp-spec-driven
-description: Desenvolvimento spec-anchored nativo para o Cursor — a especificação continua verdadeira porque é auditada mecanicamente contra o código. Use ao planejar features, implementar com verificação, ou auditar uma implementação contra a spec. Gatilhos "especificar feature", "nova feature", "implementar", "auditar spec", "verificar", "plano de execução", "executar em paralelo", "o que não tem teste", "lições aprendidas". Fluxo Especificar → Projetar → Tarefas → Plano → Executar → Auditar → Aprender, com rastreabilidade história→critério de aceite→tarefa→teste, definição de pronto executável (cada critério de aceite vira teste anotado), suposições e perguntas como cidadãs de primeira classe, constituição verificável (preset LGPD/educação), lições aprendidas com lastro mecânico e plano de execução com PARALELISMO OPCIONAL: o agente apresenta o plano recomendado e SEMPRE pergunta QUAIS tarefas o usuário quer paralelizar (faixas com git worktrees + sessões headless do CLI do Cursor `agent -p` via --paralelizar, ou uma tarefa após a outra via --sequencial) e SEMPRE confirma os MODELOS por tarefa antes de executar — os tokens e o plano do Cursor são do usuário; modelos claude-*/gpt-* são cobrados por uso e `composer` tem uso incluído; ele trava o custo com --modelo no plano ou por tarefa via `onp-spec tarefa`. Avisa que a execução roda em background e, durante ela, posta no chat a cada 1 minuto a tabela de andamento (o que está rodando e o que não está) + resumo geral — com resumo completo ao final. Integração com os recursos nativos do Cursor (lista de tarefas do agente, Plan Mode, Ask Mode, Agents Window, invocação explícita com /onp-spec-driven). Motor mecânico EMBARCADO na skill (zero instalação — roda com o node do ambiente).
+description: Native spec-anchored development for Cursor — the spec stays true because it's mechanically audited against the code. Use when planning features, implementing with verification, or auditing an implementation against the spec. Triggers "specify feature", "new feature", "implement", "audit spec", "verify", "execution plan", "run in parallel", "what has no test", "lessons learned". Specify → Design → Tasks → Plan → Execute → Audit → Learn flow, with story→acceptance-criterion→task→test traceability, an executable definition of done (every acceptance criterion becomes an annotated test), assumptions and open questions as first-class citizens, a verifiable constitution (LGPD/education preset), lessons learned with mechanical grounding, and an execution plan with OPTIONAL PARALLELISM: the agent presents the recommended plan and ALWAYS asks WHICH tasks the user wants to parallelize (lanes with git worktrees + headless Cursor CLI `agent -p` sessions via --parallelize, or one task after another via --sequential) and ALWAYS confirms the MODELS per task before executing — the tokens and the Cursor plan are the user's; `claude-*`/`gpt-*` models are billed per use and `composer` has included usage; they lock in the cost with --model in the plan or per task via `onp-spec task`. Warns that execution runs in the background and, during it, posts a progress table in the chat every 1 minute (what's running and what isn't) + an overall summary — with a full summary at the end. Integrates with Cursor's native features (agent task list, Plan Mode, Ask Mode, Agents Window, explicit invocation with /onp-spec-driven). Mechanical engine EMBEDDED in the skill (zero install — runs with the environment's node).
 license: MIT
 metadata:
   author: Vitor Manoel — O Novo Programador
@@ -8,378 +8,421 @@ metadata:
   agent: cursor
 ---
 
-# onp-spec-driven — a especificação que continua verdadeira (Cursor)
+# onp-spec-driven — the spec that stays true (Cursor)
 
-A maioria das ferramentas de SDD é **spec-first**: a especificação gera código,
-o código evolui, e a especificação vira mentira. Esta é **spec-anchored**: a
-especificação é auditada mecanicamente contra o código, o tempo todo. Você não
-confia que o agente obedeceu — **a máquina prova, via exit code**.
+Most SDD tools are **spec-first**: the spec generates code, the code
+evolves, and the spec becomes a lie. This one is **spec-anchored**: the spec
+is mechanically audited against the code, at all times. You don't trust that
+the agent obeyed — **the machine proves it, via exit code**.
 
 ```
-┌───────────┐  ┌────────┐  ┌───────┐  ┌───────┐  ┌────────┐  ┌───────┐
-│ESPECIFICAR│→ │PROJETAR│→ │TAREFAS│→ │ PLANO │→ │EXECUTAR│→ │AUDITAR│
-└───────────┘  └────────┘  └───────┘  └───────┘  └────────┘  └───────┘
-   sempre      se preciso   se grande  2+ tarefas   sempre    SEMPRE (gate)
+┌────────┐  ┌──────┐  ┌───────┐  ┌───────┐  ┌────────┐  ┌───────┐
+│ SPECIFY│→ │DESIGN│→ │ TASKS │→ │ PLAN  │→ │EXECUTE │→ │ AUDIT │
+└────────┘  └──────┘  └───────┘  └───────┘  └────────┘  └───────┘
+   always     if needed  if large  2+ tasks    always    ALWAYS (gate)
 ```
 
-## Vocabulário — fale sempre em português simples
+## Vocabulary — always speak in plain language
 
-Os arquivos usam **códigos de rastreio** curtos (é o que liga especificação,
-tarefas e testes na máquina). Mas com o usuário você fala **sempre o nome por
-extenso** — o código vai entre parênteses quando precisar dele:
+**Write the artifacts in English.** The spec, tasks, tests and commit messages
+always stay in English — the tracking codes, statuses and Given/When/Then
+keywords are English, so writing them in another language breaks the
+consistency the machine relies on. Keep TALKING to the user in their own
+language; only the files are in English.
 
-| Código | Nome que você usa com o usuário |
+The files use short **tracking codes** (that's what links spec, tasks, and
+tests together for the machine). But with the user you always speak **the
+name in full** — the code goes in parentheses only when it's needed:
+
+| Code | Name you use with the user |
 |---|---|
-| US-xxx | **história de usuário** — quem precisa, o que precisa e por quê |
-| AC-xxx | **critério de aceite** — resultado observável que um teste checa |
-| T-xxx | **tarefa** — passo de implementação |
-| ASM-xxx | **suposição** — lacuna preenchida com palpite, ainda sem confirmação |
-| Q-xxx | **pergunta em aberto** — decisão que falta o dono do produto tomar |
-| P-xxx | **princípio** (da constituição) — restrição inegociável do projeto |
-| DoD | **definição de pronto** — o conjunto de critérios de aceite com prova |
+| US-xxx | **user story** — who needs it, what they need, and why |
+| AC-xxx | **acceptance criterion** — observable outcome a test checks |
+| T-xxx | **task** — implementation step |
+| ASM-xxx | **assumption** — a gap filled with a guess, still unconfirmed |
+| Q-xxx | **open question** — a decision the product owner still needs to make |
+| P-xxx | **principle** (from the constitution) — non-negotiable project constraint |
+| DoD | **definition of done** — the set of acceptance criteria with proof |
 
-Exemplo: diga "o critério de aceite AC-003 (aviso de atraso) ainda não tem
-teste", nunca "o AC-003 falta @spec tag". Nunca exija que o usuário conheça
-as siglas para entender o que você disse.
+Example: say "acceptance criterion AC-003 (late warning) still has no
+test", never "AC-003 is missing an @spec tag". Never require the user to
+know the acronyms to understand what you said.
 
-## Interação — use o harness do Cursor a favor do usuário
+## Interaction — use Cursor's harness in the user's favor
 
-Esta skill roda nativamente dentro do Cursor (o usuário pode invocá-la
-explicitamente digitando `/onp-spec-driven` no chat do Agent, ou você a
-assume quando o pedido casa com a descrição). Use os recursos nativos para
-deixar o fluxo visível e interativo, sem virar burocracia:
+This skill runs natively inside Cursor (the user can invoke it explicitly
+by typing `/onp-spec-driven` in the Agent chat, or you take it on when the
+request matches the description). Use the native features to keep the flow
+visible and interactive, without turning it into bureaucracy:
 
-- **Explique o que fez e onde está**: depois de CADA ação, diga em português
-  simples (1) o que foi feito, (2) o caminho de cada arquivo criado ou
-  alterado, (3) qual é o próximo passo. O usuário nunca deveria precisar
-  perguntar "cadê o arquivo?" nem "e agora?".
-- **Lista de tarefas do agente**: ao iniciar uma feature, crie um item por
-  fase ("Especificar entrega-dever", "Escrever testes", "Implementar",
-  "Auditar"...). Em features grandes, um item por tarefa (T-xxx) na fase
-  Executar. Mantenha o status atualizado a cada passo — é assim que o usuário
-  acompanha onde você está sem precisar perguntar.
-- **Perguntas diretas no chat**: quando surgir uma pergunta em aberto ou uma
-  suposição que precisa de confirmação e o usuário estiver presente, pergunte
-  na hora, com opções concretas e numeradas (inclua a sua recomendação) — e
-  registre a resposta na especificação (status `respondida`/`confirmada`).
-  Não acumule perguntas em silêncio nem decida sozinho o que é do dono do
-  produto.
-- **Modos do Cursor — recomende no momento certo**:
-  - **Plan Mode** (Shift+Tab no chat; `--mode=plan` no CLI): para desenhar a
-    implementação ANTES de tocar no código — útil nas fases Projetar e
-    Plano. O plano do Cursor complementa (nunca substitui) os artefatos
-    mecânicos do `onp-spec plano`.
-  - **Ask Mode** (`--mode=ask`): para explorar o código sem alterar nada —
-    bom para responder perguntas do usuário sobre a spec sem risco.
-  - **Agents Window / worktrees nativas**: alternativa MANUAL ao executor
-    headless — o usuário pode abrir um agente por faixa e colar os prompts
-    que estão embutidos no `executar-tarefas.sh`. O gate final é o mesmo.
-- **Traduza a saída do motor**: depois de cada comando, resuma em 1–3 frases
-  de português simples o que a máquina disse e qual o próximo passo. Cole a
-  saída bruta também (a prova é ela), mas nunca a entregue sozinha.
-- **Respeite o usuário avançado**: se o usuário demonstra conhecer o fluxo
-  (usa os códigos, pede comandos diretos), corte as explicações didáticas e
-  vá direto ao ponto. A tradução encurta; o rigor (verify + audit) nunca.
+- **Explain what you did and where it is**: after EVERY action, say in
+  plain language (1) what was done, (2) the path of every file created or
+  changed, (3) what the next step is. The user should never need to ask
+  "where's the file?" or "now what?".
+- **Agent task list**: when starting a feature, create an item per phase
+  ("Specify homework-delivery", "Write tests", "Implement", "Audit"...). On
+  large features, one item per task (T-xxx) in the Execute phase. Keep the
+  status updated at each step — that's how the user follows where you are
+  without needing to ask.
+- **Direct questions in chat**: when an open question or an assumption that
+  needs confirmation comes up and the user is present, ask right away, with
+  concrete, numbered options (include your recommendation) — and record the
+  answer in the spec (status `answered`/`confirmed`). Don't stockpile
+  questions silently or decide alone something that's the product owner's
+  call.
+- **Cursor modes — recommend them at the right moment**:
+  - **Plan Mode** (Shift+Tab in chat; `--mode=plan` in the CLI): to design
+    the implementation BEFORE touching the code — useful during the Design
+    and Plan phases. Cursor's plan complements (never replaces) `onp-spec
+    plan`'s mechanical artifacts.
+  - **Ask Mode** (`--mode=ask`): to explore the code without changing
+    anything — good for answering the user's questions about the spec
+    without risk.
+  - **Agents Window / native worktrees**: a MANUAL alternative to the
+    headless executor — the user can open one agent per lane and paste in
+    the prompts already embedded in `run-tasks.sh`. The final gate is the
+    same.
+- **Translate the engine's output**: after each command, summarize in 1–3
+  plain-language sentences what the machine said and what the next step
+  is. Paste the raw output too (that's the proof), but never hand it over
+  alone.
+- **Respect the advanced user**: if the user shows they know the flow
+  (uses the codes, asks for direct commands), cut the tutorial-style
+  explanations and get straight to the point. The translation shortens
+  things; the rigor (verify + audit) never does.
 
-## O motor embarcado (zero instalação)
+## The embedded engine (zero install)
 
-O motor mecânico mora DENTRO desta skill, em `scripts/onp-spec.mjs` — resolvido
-**relativo ao diretório desta SKILL.md** (o Cursor informa o diretório da skill
-ao carregá-la; nunca assuma um caminho fixo de instalação). Não existe nada
-para instalar: sem npm, sem npx, sem CLI global.
+The mechanical engine lives INSIDE this skill, at `scripts/onp-spec.mjs` —
+resolved **relative to this SKILL.md's directory** (Cursor reports the
+skill's directory when loading it; never assume a fixed install path).
+There's nothing to install: no npm, no npx, no global CLI.
 
-Todos os comandos rodam **a partir da raiz do projeto do usuário**:
+All commands run **from the root of the user's project**:
 
 ```bash
-node <dir-desta-skill>/scripts/onp-spec.mjs <comando>
+node <this-skill-dir>/scripts/onp-spec.mjs <command>
 ```
 
-Comandos: `init [--preset base|lgpd-educacao]` · `new <feature>` ·
-`plano <feature> [--agents cursor] [--paralelizar T-xxx,T-yyy] [--sequencial]` ·
-`resumo [feature] [--tabela] [--gravar --origem ia --texto "..."]` ·
-`tarefa <feature> <T-xxx> <status>` ·
+Commands: `init [--preset base|lgpd-education]` · `new <feature>` ·
+`plan <feature> [--agents cursor] [--parallelize T-xxx,T-yyy] [--sequential]` ·
+`summary [feature] [--table] [--save --source ai --text "..."]` ·
+`task <feature> <T-xxx> <status>` ·
 `scaffold <feature> [--force]` · `verify <feature>` ·
-`audit [--ci] [--json] [--md <arquivo>]` · `status` · `assumptions` ·
-`licoes <add|list|sugerir|penalizar|status>`.
+`audit [--ci] [--json] [--md <file>]` · `status` · `assumptions` ·
+`lessons <add|list|suggest|penalize|status>`.
 
-Abaixo, `onp-spec <comando>` é abreviação dessa invocação.
+Below, `onp-spec <command>` abbreviates this invocation.
 
-**Degradação graciosa** — se `node` não existir no ambiente: execute a
-auditoria manualmente (releia especificação/tarefas/testes cruzando cada
-problema do catálogo abaixo) e rotule o resultado, textualmente, como
-**`PROVA FRACA (auditoria manual)`**. Nunca apresente auditoria manual como se
-fosse o gate mecânico.
+**Graceful degradation** — if `node` doesn't exist in the environment:
+perform the audit manually (reread the spec/tasks/tests, cross-checking
+each problem in the catalog below) and label the result, in text, as
+**`WEAK PROOF (manual audit)`**. Never present a manual audit as if it were
+the mechanical gate.
 
-## Contrato de execução — inegociável
+## Execution contract — non-negotiable
 
-1. **Todo critério de aceite vira um teste anotado** com `@spec:AC-xxx` no
-   título. Sem teste anotado, o critério não existe para a máquina.
-2. **Quem decide se um critério de aceite passou é o test runner**, nunca
-   você. `onp-spec verify` roda os testes e grava a prova. Você não pode
-   declarar vitória. **Teste pulado (skip/todo) não é prova** — o motor recusa
-   e o audit acusa.
-3. **A feature só fecha quando `onp-spec audit --ci` sai com código 0.** Rodar
-   o audit e **colar a saída** é o último passo, sempre.
-4. **Suposições e perguntas em aberto são obrigatórias.** Preencheu lacuna sem
-   confirmar? É uma suposição. Faltou informação? É uma pergunta em aberto. A
-   seção ausente também é problema (`SECAO_AUSENTE`) — se não houver nenhuma,
-   escreva "Nenhuma." e desconfie.
-5. **A constituição manda.** Princípios [DEVE] são verificados; violá-los
-   quebra o audit. Nunca conserte o princípio para "fazer passar" — conserte o
-   código.
-6. **Nunca enfraqueça, pule ou apague um teste para passar.** O terminal do
-   Cursor pode pedir aprovação para comandos — peça a permissão que faltar,
-   jamais contorne o teste. Se o audit falhar 3 vezes seguidas no mesmo
-   problema, PARE e apresente os achados ao usuário — não itere para sempre
-   nem contorne o gate.
+1. **Every acceptance criterion becomes an annotated test** with
+   `@spec:AC-xxx` in the title. Without an annotated test, the criterion
+   doesn't exist for the machine.
+2. **The test runner decides whether an acceptance criterion passed**,
+   never you. `onp-spec verify` runs the tests and records the proof. You
+   can't declare victory. **A skipped test (skip/todo) is not proof** —
+   the engine refuses it and the audit flags it.
+3. **The feature only closes when `onp-spec audit --ci` exits with code
+   0.** Running the audit and **pasting the output** is the last step,
+   always.
+4. **Assumptions and open questions are mandatory.** Filled a gap without
+   confirming it? That's an assumption. Missing information? That's an
+   open question. The absent section is also a problem
+   (`SECTION_MISSING`) — if there are none, write "None." and be
+   suspicious.
+5. **The constitution rules.** `[MUST]` principles are verified; violating
+   them breaks the audit. Never fix the principle to "make it pass" — fix
+   the code.
+6. **Never weaken, skip, or delete a test to make it pass.** Cursor's
+   terminal may ask for approval on commands — request whatever permission
+   is missing, never work around the test. If the audit fails 3 times in
+   a row on the same problem, STOP and present the findings to the user —
+   don't iterate forever or work around the gate.
 
-## Auto-dimensionamento
+## Auto-sizing
 
-| Escopo | Especificar | Projetar | Tarefas | Plano | Executar |
+| Scope | Specify | Design | Tasks | Plan | Execute |
 |---|---|---|---|---|---|
-| Pequeno (≤3 arquivos) | spec enxuta | pular | implícito | pular | implementar + verify + audit |
-| Médio (<10 tarefas) | spec completa | inline | inline | se 2+ tarefas | implementar + verify + audit |
-| Grande (multi-componente) | spec + design | design.md | tasks.md | sempre | por faixa + verify + audit |
+| Small (≤3 files) | lean spec | skip | implicit | skip | implement + verify + audit |
+| Medium (<10 tasks) | full spec | inline | inline | if 2+ tasks | implement + verify + audit |
+| Large (multi-component) | spec + design | design.md | tasks.md | always | per lane + verify + audit |
 
-**Sempre obrigatórios:** Especificar e Auditar.
-**Válvula de segurança:** mesmo pulando Tarefas, comece o Executar listando os
-passos atômicos. Se aparecerem >5 passos ou dependências entre eles, PARE e
-crie `tasks.md` — a fase foi pulada por engano.
+**Always mandatory:** Specify and Audit.
+**Safety valve:** even if Tasks is skipped, start Execute by listing the
+atomic steps. If more than 5 steps show up or dependencies between them
+appear, STOP and create `tasks.md` — the phase was skipped by mistake.
 
-## Passo a passo no Cursor
+## Step by step in Cursor
 
-### 1. Especificar
+### 1. Specify
 
-- **Antes de escrever, carregue o guia aprendido**: `onp-spec licoes list`
-  (em projeto grande, filtre: `--escopo <dominio>`). São regras confirmadas
-  por falhas reais de features anteriores — aplique-as na spec.
-- `onp-spec new <feature>` cria `.spec/features/<feature>/spec.md` e `tasks.md`
-  com códigos de rastreio contínuos (únicos no projeto inteiro).
-- Escreva as **histórias de usuário (US-xxx)** e, para cada uma, os
-  **critérios de aceite (AC-xxx)** em Dado/Quando/Então. O critério precisa
-  ser observável — algo que um teste checa. "Deve ser rápido" não é critério;
-  "responde em < 300ms" é.
-- **Registre suposições (ASM-xxx) e perguntas em aberto (Q-xxx)** com status
-  honesto (`aberta`). Usuário presente? Pergunte na hora, no chat, com
-  opções concretas — e registre a resposta.
-- Rode `onp-spec audit` e leia os problemas apontados (critério incompleto,
-  história sem critério, seção ausente...) — eles dizem o que falta.
-- Detalhes de escrita: [escrevendo-specs.md](references/escrevendo-specs.md).
+- **Before writing, load the learned guide**: `onp-spec lessons list`
+  (on a large project, filter: `--scope <domain>`). These are rules
+  confirmed by real failures in previous features — apply them to the
+  spec.
+- **Before specifying AND before detailing the tasks, web-search the
+  domain's best practice**: every feature with a weighty technical
+  decision (security, cryptography, authentication, payments,
+  concurrency, formats, accessibility...) requires discovering the state
+  of the art BEFORE writing acceptance criteria and tasks. Do a web
+  search and bring what you found into the spec (it becomes an observable
+  acceptance criterion) and into the constitution (it becomes a `[MUST]`
+  principle); record the source, and if it can't be confirmed on the
+  spot, leave it as an assumption (ASM-xxx). E.g.: password hashing isn't
+  "store the hash" — current practice is **Argon2id** with a **global
+  pepper** + **per-user salt** and a cost calibrated against GPU/brute-force
+  attacks.
+- **When unsure HOW to implement, ask the user's preference — always**:
+  when there's more than one reasonable path (library, approach, format,
+  trade-off) and the research doesn't decide it on its own, STOP and ask
+  with concrete options (pros/cons in one line). Never decide alone
+  something that's the user's call; record the answer in the spec, and
+  if you proceed without confirming, make it explicit as an assumption
+  (ASM-xxx).
+- `onp-spec new <feature>` creates `.spec/features/<feature>/spec.md` and
+  `tasks.md` with continuous tracking codes (unique across the whole
+  project).
+- Write the **user stories (US-xxx)** and, for each one, the **acceptance
+  criteria (AC-xxx)** in Given/When/Then. The criterion needs to be
+  observable — something a test checks. "Should be fast" isn't a
+  criterion; "responds in < 300ms" is.
+- **Record assumptions (ASM-xxx) and open questions (Q-xxx)** with an
+  honest status (`open`). User present? Ask right away, in chat, with
+  concrete options — and record the answer.
+- Run `onp-spec audit` and read the flagged problems (incomplete
+  criterion, story without a criterion, missing section...) — they tell
+  you what's missing.
+- Writing details: [writing-specs.md](references/writing-specs.md).
 
-### 2. Projetar (features grandes)
+### 2. Design (large features)
 
-Crie `design.md` com arquitetura e componentes (o Plan Mode do Cursor ajuda a
-desenhar antes de codar). Cada decisão não-óbvia vira ou uma suposição (você
-assumiu) ou uma pergunta em aberto (precisa do dono do produto).
+Create `design.md` with architecture and components (Cursor's Plan Mode
+helps design before coding). Every non-obvious decision becomes either an
+assumption (you assumed it) or an open question (needs the product
+owner).
 
-### 3. Tarefas
+### 3. Tasks
 
-- Em `tasks.md`, quebre em **tarefas (T-xxx)**. Cada tarefa tem `Refs:` (as
-  histórias/critérios que atende — códigos são globais, pode referenciar
-  critério de outra feature) e `Arquivos:` (separados por VÍRGULA; espaços em
-  caminhos são permitidos). Campo opcional por tarefa: `Modelo:` (um slug de
-  modelo do Cursor, ex.: `composer`, `claude-sonnet-5`, `gpt-5.6-terra`;
-  quer controlar o esforço de raciocínio? use o slug com sufixo, ex.:
-  `gpt-5.6-terra-high` — **o CLI do Cursor não tem flag de esforço**, então
-  o campo `Esforço:` é apenas informativo neste plano). Modelo é **proposta
-  sua** — quem bate o martelo é o usuário, na confirmação de custos da fase
-  Plano; para ajustar sem editar arquivo:
-  `onp-spec tarefa <feature> <T-xxx> --modelo <m>`.
-- Status entre colchetes: `[pendente]`, `[em-andamento]`, `[concluida]`
-  (acentos e maiúsculas são tolerados; token desconhecido é erro).
-- **Fechou o tasks.md? Anuncie o paralelismo e PERGUNTE QUAIS.** Rode
-  `onp-spec plano <feature>` e apresente ao usuário, sem ele pedir, o plano
-  como RECOMENDAÇÃO: *"X destas Y tarefas podem rodar EM PARALELO, em N
-  faixas — recomendo assim."* Em seguida pergunte no chat: **quais tarefas
-  ele quer paralelizar?** Liste as tarefas paralelizáveis como opções — a
-  recomendação (todas) marcada "(recomendado)"; mais de 4? agrupe por faixa.
-  Inclua a saída "nenhuma — uma após a outra". A escolha é dele — nunca
-  execute sem essa resposta, e nunca deixe o paralelismo como segredo do
-  motor.
+- In `tasks.md`, break the work into **tasks (T-xxx)**. Each task has
+  `Refs:` (the stories/criteria it addresses — codes are global, it can
+  reference a criterion from another feature) and `Files:` (comma
+  separated; spaces in paths are allowed). Optional per-task field:
+  `Model:` (a Cursor model slug, e.g. `composer`, `claude-sonnet-5`,
+  `gpt-5.6-terra`; want to control reasoning effort? use the slug with a
+  suffix, e.g. `gpt-5.6-terra-high` — **the Cursor CLI has no effort
+  flag**, so the `Effort:` field is only informational in this plan).
+  Model is **your proposal** — the user makes the final call, during the
+  Plan phase's cost confirmation; to adjust without editing the file:
+  `onp-spec task <feature> <T-xxx> --model <m>`.
+- Status in brackets: `[pending]`, `[in-progress]`, `[done]` (an unknown
+  token is an error).
+- **Closed tasks.md? Announce parallelism and ASK WHICH.** Run
+  `onp-spec plan <feature>` and present the plan to the user, unprompted,
+  as a RECOMMENDATION: *"X of these Y tasks can run IN PARALLEL, across
+  N lanes — I recommend it this way."* Then ask in chat: **which tasks
+  do they want to parallelize?** List the parallelizable tasks as
+  options — the recommendation (all of them) marked "(recommended)";
+  more than 4? group them by lane. Include the option "none — one after
+  another". It's their choice — never execute without that answer, and
+  never leave the parallelism as the engine's secret.
 
-### 4. Plano de execução (2+ tarefas pendentes)
+### 4. Execution plan (2+ pending tasks)
 
-- **QUAIS tarefas paralelizar é escolha do USUÁRIO — pergunte antes de
-  executar** (a pergunta da fase Tarefas; se ainda não perguntou, pergunte
-  agora). Escolheu todas → use o plano como está. Escolheu um subconjunto →
-  regenere com `onp-spec plano <feature> --paralelizar T-xxx,T-yyy` e
-  execute esse. Escolheu nenhuma → regenere com `--sequencial`. Sem
-  resposta, não execute.
-- **O MODELO de cada tarefa é escolha do USUÁRIO — confirme ANTES de
-  executar.** Os tokens e o plano do Cursor são dele: modelos `claude-*` e
-  `gpt-*` são cobrados por uso; `composer` (modelo da casa) tem uso incluído
-  nos planos pagos. O `onp-spec plano` já imprime a lista "modelos deste
-  plano" (uma linha por tarefa) — apresente-a e pergunte, com opções
-  concretas: **(a)** manter como está (a recomendação); **(b)** economizar
-  em tudo — regenere com `onp-spec plano <feature> --modelo composer` (trava
-  TODAS as tarefas e vence tasks.md e config); **(c)** ajustar por tarefa —
-  `onp-spec tarefa <feature> <T-xxx> --modelo <m>` e regenere o plano;
-  **(d)** o modelo que ELE propuser — use o que o usuário pedir, sem
-  discutir. Sem essa confirmação, não execute. Nunca troque um modelo por um
-  mais caro sem o usuário pedir. Esforço de raciocínio? No Cursor ele vai
-  embutido no slug (ex.: `gpt-5.6-terra-high`) — explique isso se o usuário
-  pedir "esforço alto".
-- `onp-spec plano <feature>` (se a detecção errar, force com
-  `--agents cursor`) agrupa tarefas de **arquivos disjuntos** em **faixas
-  paralelas** — 1 faixa = 1 git worktree + 1 branch + 1 janela de contexto
-  limpa; com `--paralelizar T-xxx,T-yyy`, só as ESCOLHIDAS entram nas faixas
-  (as demais rodam uma após a outra, ao final, na árvore principal); com
-  `--sequencial`, TODAS as tarefas rodam uma após a outra, na ordem do
-  tasks.md. Três artefatos em `.spec/features/<feature>/`:
-  - `plano-execucao.md` — faixas/ordem, gestão de branches/commits e gate;
-  - `executar-tarefas.sh` — executor headless: roda o CLI do Cursor
-    (`agent -p`, com fallback para o nome legado `cursor-agent`) com
-    `--model` já definido por tarefa, saída `--output-format stream-json`
-    (o stream vai para o ledger) e `--force` — sem `--force` o modo print
-    do Cursor não modifica arquivos; o controle fino continua sendo do
-    usuário via `permissions.deny` em `.cursor/cli.json`, que VENCE o
-    `--force` (por faixa em paralelo, ou uma tarefa por vez no modo
-    sequencial). O script mescla o que houver para mesclar, marca as
-    tarefas e fecha com verify + audit;
-  - `plano-execucao.html` — visual do plano (somente leitura, sem botão).
-- **Requisito do executor**: o CLI do Cursor instalado
-  (`curl https://cursor.com/install -fsS | bash`) e login feito (`agent
-  login` ou `CURSOR_API_KEY`). Sem o CLI, ofereça a rota manual: os prompts
-  de cada faixa estão embutidos no script — o usuário pode colá-los em
-  agentes paralelos da Agents Window (worktrees nativas do Cursor) e fechar
-  com o gate.
-- **Apresente o plano ao usuário**: resuma as faixas (ou a ordem, no
-  sequencial), diga onde estão os arquivos e ofereça as rotas — automática
-  (VOCÊ roda `bash .spec/features/<feature>/executar-tarefas.sh` num
-  terminal em segundo plano) ou manual (você mesmo implementa, seguindo
-  branches e commits do plano).
-- **Antes de executar, AVISE — sempre**: com paralelismo e custos já
-  confirmados, diga ao usuário, em uma frase, que as alterações vão rodar em
-  **background**, que a cada 1 minuto você posta aqui a **tabela de
-  andamento**, e que ao final ele recebe o **resumo completo** da execução.
-  Só então rode o script.
-- **Tabela + resumo a cada 1 minuto (obrigatórios enquanto roda)**: com o
-  script em background, a cada ~1 min poste no chat a **tabela de
-  andamento** (`onp-spec resumo <feature> --tabela` — uma linha por tarefa:
-  qual está rodando, qual não está, o que concluiu/falhou e a última ação) e
-  o **resumo** (`onp-spec resumo <feature>` — o executor grava um resumo
-  escrito por IA a cada minuto no ledger; fallback: motor). O mesmo texto
-  sai no terminal do script (`📣 resumo`). Espelhe também as tarefas na
-  lista de tarefas do agente. O usuário nunca fica sem saber o que está
-  rolando.
-- **Terminou? Entregue o resumo completo**: a tabela final, o que cada
-  tarefa fez (commits), o que falhou (se algo falhou) e a saída do gate
-  (verify + audit) colada e traduzida em uma frase.
-- **Falhou uma faixa? não reexecute tudo.** Leia o log e o stream, entenda a
-  causa, e rode `executar-tarefas.sh --faixa <id>` (worktree e branch da
-  tentativa anterior são limpos antes); `--seq <T-xxx>` refaz uma tarefa,
-  `--gate` roda só o veredito, e `--listar` mostra os alvos. O trabalho que
-  já passou fica intacto.
-- Mudou tasks.md ou a config (`paralelo` no onpspec.config.json)? **Regenere
-  o plano** — nunca edite os artefatos à mão.
+- **WHICH tasks to parallelize is the USER's choice — ask before
+  executing** (the question from the Tasks phase; if you haven't asked
+  yet, ask now). Chose all → use the plan as-is. Chose a subset →
+  regenerate with `onp-spec plan <feature> --parallelize T-xxx,T-yyy` and
+  run that one. Chose none → regenerate with `--sequential`. No answer,
+  don't execute.
+- **The MODEL for each task is the USER's choice — confirm BEFORE
+  executing.** The tokens and the Cursor plan are theirs: `claude-*` and
+  `gpt-*` models are billed per use; `composer` (the house model) has
+  usage included in paid plans. `onp-spec plan` already prints the
+  "models for this plan" list (one line per task) — present it and ask,
+  with concrete options: **(a)** keep it as-is (the recommendation);
+  **(b)** save on everything — regenerate with `onp-spec plan <feature>
+  --model composer` (locks ALL tasks and overrides tasks.md and config);
+  **(c)** adjust per task — `onp-spec task <feature> <T-xxx> --model <m>`
+  and regenerate the plan; **(d)** whatever model THEY propose — use what
+  the user asks for, without arguing. Without this confirmation, don't
+  execute. Never swap in a pricier model without the user asking for it.
+  Reasoning effort? In Cursor it's embedded in the slug (e.g.
+  `gpt-5.6-terra-high`) — explain that if the user asks for "high
+  effort".
+- `onp-spec plan <feature>` (if detection gets it wrong, force it with
+  `--agents cursor`) groups tasks with **disjoint files** into **parallel
+  lanes** — 1 lane = 1 git worktree + 1 branch + 1 clean context window;
+  with `--parallelize T-xxx,T-yyy`, only the CHOSEN tasks go into lanes
+  (the rest run one after another, at the end, on the main tree); with
+  `--sequential`, ALL tasks run one after another, in tasks.md order.
+  Three artifacts in `.spec/features/<feature>/`:
+  - `plan-execution.md` — lanes/order, branch/commit management, and the
+    gate;
+  - `run-tasks.sh` — headless executor: runs the Cursor CLI (`agent -p`,
+    with a fallback to the legacy name `cursor-agent`) with `--model`
+    already set per task, `--output-format stream-json` output (the
+    stream goes to the ledger), and `--force` — without `--force`
+    Cursor's print mode doesn't modify files; fine-grained control still
+    belongs to the user via `permissions.deny` in `.cursor/cli.json`,
+    which OVERRIDES `--force` (per lane in parallel, or one task at a
+    time in sequential mode). The script merges whatever needs merging,
+    marks the tasks, and closes with verify + audit;
+  - `plan-execution.html` — a visual of the plan (read-only, no button).
+- **Executor requirement**: the Cursor CLI installed
+  (`curl https://cursor.com/install -fsS | bash`) and logged in (`agent
+  login` or `CURSOR_API_KEY`). Without the CLI, offer the manual route:
+  each lane's prompts are embedded in the script — the user can paste
+  them into parallel agents in the Agents Window (Cursor's native
+  worktrees) and close it out with the gate.
+- **Present the plan to the user**: summarize the lanes (or the order, in
+  sequential mode), say where the files are, and offer the routes —
+  automatic (YOU run `bash .spec/features/<feature>/run-tasks.sh` in a
+  background terminal) or manual (you implement it yourself, following
+  the plan's branches and commits).
+- **Before executing, WARN — always**: with parallelism and costs already
+  confirmed, tell the user, in one sentence, that the changes will run in
+  the **background**, that every 1 minute you'll post the **progress
+  table** here, and that at the end they'll get the **full summary** of
+  the run. Only then run the script.
+- **Table + summary every 1 minute (mandatory while running)**: with the
+  script running in the background, every ~1 min post in the chat the
+  **progress table** (`onp-spec summary <feature> --table` — one line
+  per task: what's running, what isn't, what finished/failed, and the
+  last action) and the **summary** (`onp-spec summary <feature>` — the
+  executor records an AI-written summary in the ledger every minute;
+  fallback: the engine). The same text is printed in the script's
+  terminal (`📣 summary`). Also mirror the tasks in the agent's task
+  list. The user is never left not knowing what's going on.
+- **Finished? Deliver the full summary**: the final table, what each
+  task did (commits), what failed (if anything did), and the gate's
+  output (verify + audit) pasted and translated into one sentence.
+- **A lane failed? Don't rerun everything.** Read the log and the
+  stream, understand the cause, and run `run-tasks.sh --lane <id>` (the
+  worktree and branch from the previous attempt are cleaned up first);
+  `--seq <T-xxx>` redoes a single task, `--gate` runs only the verdict,
+  and `--list` shows the targets. Work that already passed stays intact.
+- Changed tasks.md or the config (`parallel` in onpspec.config.json)?
+  **Regenerate the plan** — never hand-edit the artifacts.
 
-### 5. Executar
+### 5. Execute
 
-- Espelhe as tarefas na lista de tarefas do agente e vá atualizando o
-  status — o usuário acompanha o progresso em tempo real. No tasks.md
-  mecânico, use `onp-spec tarefa <feature> <T-xxx> <status>`.
-- `onp-spec scaffold <feature>` gera o esqueleto de teste **que falha** para
-  cada critério de aceite sem teste — e também para cada princípio da
-  constituição com `verificação(teste)` ainda sem tag. A definição de pronto
-  nasce executável.
-- Implemente até os testes passarem. **1 tarefa = 1 commit atômico** (a
-  mensagem cita a tarefa: `T-003 <feature>: ...`). Marque `[concluida]` só
-  com prova PASS.
-- Um teste por critério de aceite no mínimo; o teste assere o resultado da
-  especificação, não o formato do seu código.
+- Mirror the tasks in the agent's task list and keep updating the status
+  — the user follows the progress in real time. In the mechanical
+  tasks.md, use `onp-spec task <feature> <T-xxx> <status>`.
+- `onp-spec scaffold <feature>` generates a **failing** test skeleton for
+  every acceptance criterion without a test — and also for every
+  constitution principle with `verification(test)` still untagged. The
+  definition of done is born executable.
+- Implement until the tests pass. **1 task = 1 atomic commit** (the
+  message cites the task: `T-003 <feature>: ...`). Mark `[done]` only
+  with PASS proof.
+- At least one test per acceptance criterion; the test asserts the
+  spec's outcome, not your code's shape.
 
-### 6. Verificar e Auditar (o gate)
+### 6. Verify and Audit (the gate)
 
-- `onp-spec verify <feature>` — roda os testes, grava a prova por critério de
-  aceite em `.spec/verification/<feature>.json`. Só PASS conta (skip não é
-  prova).
-- `onp-spec audit --ci` — o veredito. Exit 0 = alinhado. Exit 1 = leia cada
-  problema e resolva. **Cole a saída final na conversa** e traduza em uma
-  frase o que ela significa.
-- Falhou? Corrija e re-audite — no máximo **3 iterações** no mesmo problema
-  antes de parar e escalar ao usuário com os problemas ranqueados.
-- Fluxo completo com exemplo: [fluxo.md](references/fluxo.md).
+- `onp-spec verify <feature>` — runs the tests, records the proof per
+  acceptance criterion in `.spec/verification/<feature>.json`. Only PASS
+  counts (skip is not proof).
+- `onp-spec audit --ci` — the verdict. Exit 0 = aligned. Exit 1 = read
+  each problem and resolve it. **Paste the final output in the
+  conversation** and translate what it means in one sentence.
+- Failed? Fix and re-audit — at most **3 iterations** on the same
+  problem before stopping and escalating to the user with the problems
+  ranked.
+- Full flow with an example: [flow.md](references/flow.md).
 
-### 7. Aprender (fecha o ciclo)
+### 7. Learn (closes the loop)
 
-Depois que o audit sai 0: o caminho até aqui ficou registrado sozinho no
-histórico de sinais (todo problema de audit e toda falha/skip de verify).
+After the audit exits 0: the path to get here was recorded on its own in
+the signal history (every audit problem and every verify failure/skip).
 
-- `onp-spec licoes sugerir` — o motor aponta sinais que recorreram em
-  features distintas e ainda não têm lição.
-- Registre **no máximo 3 lições** com `onp-spec licoes add --sinal <CODIGO>
-  --feature <f> --fonte <AC-xxx> --texto "regra geral em uma frase"
-  [--escopo <dominio>]`. O motor RECUSA lição sem sinal real registrado
-  (`LICAO_SEM_LASTRO`) — se recusar, a lição não existe; não force.
-- **Caminho limpo → nenhuma lição.** Isso é correto, não é omissão.
-- Regra durável de projeto que não depende de sinal (convenção de pasta,
-  comando de build)? O lugar dela é o `AGENTS.md` do repositório ou uma rule
-  curta em `.cursor/rules/` — sugira ao usuário; lição do motor é só o que
-  tem lastro mecânico.
-- Fraseado, promoção, penalização e escala: [licoes.md](references/licoes.md).
+- `onp-spec lessons suggest` — the engine points out signals that
+  recurred across distinct features and still have no lesson.
+- Record **at most 3 lessons** with `onp-spec lessons add --signal <CODE>
+  --feature <f> --source <AC-xxx> --text "general rule in one sentence"
+  [--scope <domain>]`. The engine REFUSES a lesson without a real signal
+  registered (`LESSON_NO_GROUNDING`) — if it refuses, the lesson doesn't
+  exist; don't force it.
+- **Clean path → no lesson.** That's correct, not an omission.
+- A durable project rule that doesn't depend on a signal (folder
+  convention, build command)? Its place is the repository's `AGENTS.md`
+  or a short rule in `.cursor/rules/` — suggest it to the user; the
+  engine's lessons are only for what has mechanical grounding.
+- Wording, promotion, penalization and scale: [lessons.md](references/lessons.md).
 
-## Catálogo de problemas que o audit aponta
+## Catalog of problems that the audit flags
 
-O audit imprime cada problema com o nome legível na frente e o código estável
-entre parênteses (o código serve para CI e para `licoes add --sinal`). Ao
-conversar com o usuário, use o nome legível.
+The audit prints each problem with the readable name up front and the
+stable code in parentheses (the code is used for CI and for `lessons add
+--signal`). When talking to the user, use the readable name.
 
-| Problema (código) | O que significa | O que fazer |
+| Problem (code) | What it means | What to do |
 |---|---|---|
-| critério de aceite sem teste (AC_SEM_TESTE) | requisito sem prova | escreva o teste com `@spec:AC-xxx` no título |
-| critério de aceite sem prova (AC_SEM_PROVA) | teste existe, nunca passou (ou foi PULADO) | rode `verify`; skip não é prova |
-| teste órfão (TESTE_ORFAO) | teste aponta pra critério que sumiu (drift!) | a especificação mudou — atualize o teste |
-| referência quebrada (REF_QUEBRADA) | tarefa cita história/critério inexistente | corrija a referência |
-| tarefa concluída sem prova (TASK_CONCLUIDA_SEM_PROVA) | tarefa [concluida] sem critério provado | verifique ou reabra a tarefa |
-| status de tarefa inválido (TASK_STATUS_INVALIDO) | status não reconhecido | use pendente/em-andamento/concluida |
-| suposição em aberto (ASM_ABERTA) | suposição aberta numa feature "pronta" | confirme/invalide com o usuário |
-| seção obrigatória ausente (SECAO_AUSENTE) | spec sem seção Suposições/Perguntas | registre-as ou escreva "Nenhuma." |
-| princípio violado (PRINCIPIO_VIOLADO) | quebrou a constituição | conserte o código, não o princípio |
-| verificação não olha nenhum arquivo (GLOB_SEM_ARQUIVOS) | glob da constituição não casa nada | corrija o glob |
-| nível de princípio inválido (NIVEL_INVALIDO) | nível desconhecido | use [DEVE]/[RECOMENDADO]/[PODE] |
-| código órfão (ARQUIVO_ORFAO) | código que nenhuma tarefa mapeia | mapeie na tarefa ou questione o código |
-| nome da feature divergente (FEATURE_DIVERGENTE) | `> feature:` difere do diretório | alinhe os dois |
-| prova fraca (PROVA_FRACA) | prova só por exit code global | prefira reporter tap/vitest-json/jest-json |
-| código de rastreio curto/duplicado (ID_CURTO / ID_DUPLICADO) | fora da gramática / repetido | use 3+ dígitos, códigos únicos |
+| acceptance criterion without a test (AC_NO_TEST) | requirement without proof | write the test with `@spec:AC-xxx` in the title |
+| acceptance criterion without proof (AC_NO_PROOF) | test exists, never passed (or was SKIPPED) | run `verify`; skip is not proof |
+| orphan test (TEST_ORPHAN) | test points to a criterion that vanished (drift!) | the spec changed — update the test |
+| broken reference (REF_BROKEN) | task cites a nonexistent story/criterion | fix the reference |
+| task done without proof (TASK_DONE_NO_PROOF) | task [done] without a proven criterion | verify or reopen the task |
+| invalid task status (TASK_STATUS_INVALID) | unrecognized status | use pending/in-progress/done |
+| open assumption (ASM_OPEN) | open assumption in a "ready" feature | confirm/invalidate with the user |
+| missing required section (SECTION_MISSING) | spec without an Assumptions/Questions section | record them or write "None." |
+| violated principle (PRINCIPLE_VIOLATED) | broke the constitution | fix the code, not the principle |
+| verification looks at no files (GLOB_NO_FILES) | constitution glob matches nothing | fix the glob |
+| invalid principle level (LEVEL_INVALID) | unrecognized level | use [MUST]/[RECOMMENDED]/[MAY] |
+| orphan code (FILE_ORPHAN) | code no task maps to | map it in a task or question the code |
+| divergent feature name (FEATURE_MISMATCH) | `> feature:` differs from the directory | align the two |
+| weak proof (PROOF_WEAK) | proof only via global exit code | prefer the tap/vitest-json/jest-json reporter |
+| short/duplicate tracking code (ID_SHORT / ID_DUPLICATE) | outside the grammar / repeated | use 3+ digits, unique codes |
 
-Também: história sem critério (`US_SEM_AC`), critério incompleto
-(`AC_INCOMPLETO`), critério sem tarefa (`AC_SEM_TASK`), pergunta em aberto
-(`Q_ABERTA`), princípio sem verificação (`PRINCIPIO_SEM_VERIFICACAO`), prova
-desatualizada (`VERIFY_OBSOLETO`), verificação malformada
-(`VERIFICACAO_MALFORMADA`, inclui regex que excede o tempo limite), arquivo
-não existe (`ARQUIVO_INEXISTENTE`), status inválido (`STATUS_INVALIDO`),
-especificação sem história (`SPEC_SEM_US`), critério fora de história
-(`AC_FORA_DE_US`).
+Also: story without a criterion (`US_NO_AC`), incomplete criterion
+(`AC_INCOMPLETE`), criterion without a task (`AC_NO_TASK`), open
+question (`Q_OPEN`), principle without a check
+(`PRINCIPLE_NO_CHECK`), stale proof (`VERIFY_STALE`), malformed
+check (`CHECK_MALFORMED`, includes a regex that exceeds the
+time limit), file doesn't exist (`FILE_MISSING`), invalid status
+(`STATUS_INVALID`), spec without a story (`SPEC_NO_US`), criterion
+outside a story (`AC_OUTSIDE_US`).
 
-## Perguntas que o motor responde por você
+## Questions the engine answers for you
 
-- **"Qual requisito não tem teste?"** → `onp-spec audit` → critério de aceite
-  sem teste (`AC_SEM_TESTE`).
-- **"Que teste não mapeia pra requisito?"** → teste órfão (`TESTE_ORFAO`).
-- **"Que código não atende requisito nenhum?"** → código órfão
-  (`ARQUIVO_ORFAO`).
-- **"O que estamos assumindo?"** → `onp-spec assumptions`.
-- **"O que dá pra fazer em paralelo?"** → `onp-spec plano <feature>` — e
-  QUAIS tarefas paralelizar é escolha do usuário, via pergunta no chat.
-- **"Dá pra rodar mais barato?"** → `onp-spec plano <feature> --modelo
-  composer` (tudo — uso incluído nos planos pagos do Cursor) ou `onp-spec
-  tarefa <feature> <T-xxx> --modelo <m>` (por tarefa, e regenere o plano) —
-  modelos SEMPRE passam pela confirmação do usuário antes de executar.
-- **"O que está rolando agora?"** → `onp-spec resumo <feature> --tabela` (a
-  tabela de andamento) + `onp-spec resumo <feature>` (o texto); poste os
-  dois no chat a cada ~1 min enquanto houver execução.
-- **"Só uma faixa falhou, como refaço só ela?"** →
-  `bash <baseDir>/executar-tarefas.sh --faixa <id>`.
-- **"Onde estamos?"** → `onp-spec status`.
+- **"Which requirement has no test?"** → `onp-spec audit` → acceptance
+  criterion without a test (`AC_NO_TEST`).
+- **"Which test doesn't map to a requirement?"** → orphan test
+  (`TEST_ORPHAN`).
+- **"Which code doesn't satisfy any requirement?"** → orphan code
+  (`FILE_ORPHAN`).
+- **"What are we assuming?"** → `onp-spec assumptions`.
+- **"What can be done in parallel?"** → `onp-spec plan <feature>` — and
+  WHICH tasks to parallelize is the user's choice, via a question in
+  chat.
+- **"Can we run this cheaper?"** → `onp-spec plan <feature> --model
+  composer` (everything — usage included in paid Cursor plans) or
+  `onp-spec task <feature> <T-xxx> --model <m>` (per task, and
+  regenerate the plan) — models ALWAYS go through the user's confirmation
+  before executing.
+- **"What's happening right now?"** → `onp-spec summary <feature>
+  --table` (the progress table) + `onp-spec summary <feature>` (the
+  text); post both in the chat every ~1 min while running.
+- **"Only one lane failed, how do I redo just that one?"** →
+  `bash <baseDir>/run-tasks.sh --lane <id>`.
+- **"Where do things stand?"** → `onp-spec status`.
 
-## Carregamento de contexto
+## Context loading
 
-Carregue referências sob demanda (na fase que precisa delas), nunca todas de
-uma vez. Nunca carregue especificações de duas features ao mesmo tempo.
-Constituição: [constituicao.md](references/constituicao.md).
+Load references on demand (in the phase that needs them), never all at
+once. Never load specs from two features at the same time. Constitution:
+[constitution.md](references/constitution.md).
 
-## Regra de ouro
+## Golden rule
 
-Se você está prestes a dizer "pronto", rode `onp-spec audit --ci` e cole a
-saída. Se não saiu 0, não está pronto. Aqui, "pronto" é uma coisa que a máquina
-verifica — não uma frase sua.
+If you're about to say "done", run `onp-spec audit --ci` and paste the
+output. If it didn't exit 0, it's not done. Here, "done" is something the
+machine verifies — not something you say.

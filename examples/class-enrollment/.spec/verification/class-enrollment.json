@@ -1,0 +1,40 @@
+{
+  "feature": "class-enrollment",
+  "timestamp": "2026-09-02T13:49:23.835Z",
+  "gitRev": "7f8b2fe",
+  "command": "node --test",
+  "reporter": "tap",
+  "exitCode": 0,
+  "testsParsed": 6,
+  "results": {
+    "AC-001": {
+      "status": "pass",
+      "testName": "AC-001: enrollment in a class with an open seat @spec:AC-001",
+      "method": "tap"
+    },
+    "AC-002": {
+      "status": "pass",
+      "testName": "AC-002: full class refuses enrollment @spec:AC-002",
+      "method": "tap"
+    },
+    "AC-003": {
+      "status": "pass",
+      "testName": "AC-003: minor without consent is blocked @spec:AC-003",
+      "method": "tap"
+    }
+  },
+  "principles": {
+    "P-001": {
+      "status": "pass",
+      "testName": "P-001 grade never exposed to another student @principle:P-001"
+    },
+    "P-002": {
+      "status": "pass",
+      "testName": "P-002 grade access is logged @principle:P-002"
+    },
+    "P-003": {
+      "status": "pass",
+      "testName": "P-003 minors' data only with a legal basis @principle:P-003"
+    }
+  }
+}

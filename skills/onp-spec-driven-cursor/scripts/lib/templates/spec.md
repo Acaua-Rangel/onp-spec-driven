@@ -1,59 +1,59 @@
-# Spec: {{TITULO}}
+# Spec: {{TITLE}}
 
 > feature: {{FEATURE}}
-> status: rascunho
+> status: draft
 
 <!--
-  Como ler este arquivo (o formato é verificado por `onp-spec audit`):
-  - US-xxx = história de usuário · AC-xxx = critério de aceite
-    ASM-xxx = suposição · Q-xxx = pergunta em aberto
-    São códigos de rastreio: ligam a especificação às tarefas e aos testes.
-  - Toda história de usuário precisa de pelo menos um critério de aceite.
-  - Todo critério de aceite precisa de Dado/Quando/Então completos.
-  - Os códigos são únicos no projeto inteiro (nunca reutilize um número).
-  - Suposições e Perguntas em aberto são OBRIGATÓRIAS: se não há nenhuma,
-    escreva "Nenhuma." — mas desconfie: quase toda feature esconde uma.
+  How to read this file (the format is checked by `onp-spec audit`):
+  - US-xxx = user story · AC-xxx = acceptance criterion
+    ASM-xxx = assumption · Q-xxx = open question
+    These are traceability IDs: they link the specification to the tasks and tests.
+  - Every user story needs at least one acceptance criterion.
+  - Every acceptance criterion needs complete Given/When/Then.
+  - IDs are unique across the whole project (never reuse a number).
+  - Assumptions and Open questions are MANDATORY: if there are none,
+    write "None." — but be suspicious: almost every feature hides one.
 -->
 
-## Contexto
+## Context
 
-Uma frase sobre o problema que esta feature resolve e para quem.
+One sentence about the problem this feature solves and for whom.
 
-## Histórias
+## Stories
 
-<!-- História de usuário: quem precisa, o que precisa e por quê. -->
+<!-- User story: who needs it, what they need and why. -->
 
-### US-001 — {{TITULO_HISTORIA}}
+### US-001 — {{STORY_TITLE}}
 
-Como [papel], quero [ação], para que [valor].
+As a [role], I want [action], so that [value].
 
-<!-- Critério de aceite: o resultado observável que um teste consegue checar.
-     Escreva para GENTE: título e Então descrevem o que o usuário vê
-     ("a tela avisa X"), não o detalhe técnico ("endpoint retorna 403") —
-     o detalhe pode ir entre parênteses. -->
+<!-- Acceptance criterion: the observable outcome a test can check.
+     Write for PEOPLE: the title and Then describe what the user sees
+     ("the screen warns X"), not the technical detail ("endpoint returns 403") —
+     the detail can go in parentheses. -->
 
-#### AC-001 — [título do critério de aceite]
+#### AC-001 — [acceptance criterion title]
 
-- **Dado** [estado inicial]
-- **Quando** [ação]
-- **Então** [resultado esperado e observável]
+- **Given** [initial state]
+- **When** [action]
+- **Then** [expected, observable result]
 
-## Fora de escopo
+## Out of scope
 
-- O que esta feature explicitamente NÃO faz.
+- What this feature explicitly does NOT do.
 
-## Suposições
+## Assumptions
 
-<!-- O que estamos ASSUMINDO sem confirmação. Status: aberta | confirmada | invalidada -->
+<!-- What we are ASSUMING without confirmation. Status: open | confirmed | invalidated -->
 
-| ID | Suposição | Status | Resolução |
+| ID | Assumption | Status | Resolution |
 |---|---|---|---|
-| ASM-001 | [o que está sendo assumido em silêncio?] | aberta | — |
+| ASM-001 | [what is being silently assumed?] | open | — |
 
-## Perguntas em aberto
+## Open questions
 
-<!-- O que ainda não sabemos. Status: aberta | respondida -->
+<!-- What we do not know yet. Status: open | answered -->
 
-| ID | Pergunta | Status | Resposta |
+| ID | Question | Status | Answer |
 |---|---|---|---|
-| Q-001 | [o que precisa ser decidido pelo dono do produto?] | aberta | — |
+| Q-001 | [what needs to be decided by the product owner?] | open | — |

@@ -1,6 +1,6 @@
-// Teste ponta-a-ponta do fluxo real:
-// init → new → escrever spec → scaffold → verify (testes falham) →
-// implementar → verify (passa) → audit --ci limpo.
+// End-to-end test of the real flow:
+// init → new → write spec → scaffold → verify (tests fail) →
+// implement → verify (passes) → clean audit --ci.
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,125 +21,125 @@ function cli(...args) {
   return { code: proc.status, out: `${proc.stdout}\n${proc.stderr}` };
 }
 
-const SPEC = `# Spec: Entrega de dever
+const SPEC = `# Spec: Homework delivery
 
-> feature: entrega-dever
-> status: em-implementacao
+> feature: homework-delivery
+> status: in-implementation
 
-## Histórias
+## Stories
 
-### US-001 — Aluno entrega dever
+### US-001 — Student delivers homework
 
-Como aluno, quero enviar meu dever, para que o professor corrija.
+As a student, I want to submit my homework, so that the teacher grades it.
 
-#### AC-001 — Entrega no prazo
+#### AC-001 — On-time delivery
 
-- **Dado** um aluno com tarefa aberta
-- **Quando** envia antes do prazo
-- **Então** status é "no prazo"
+- **Given** a student with an open task
+- **When** they submit before the deadline
+- **Then** status is "on time"
 
-## Suposições
+## Assumptions
 
-| ID | Suposição | Status | Resolução |
+| ID | Assumption | Status | Resolution |
 |---|---|---|---|
-| ASM-001 | Sem reenvio | confirmada | ok |
+| ASM-001 | No resubmission | confirmed | ok |
 
-## Perguntas em aberto
+## Open questions
 
-| ID | Pergunta | Status | Resposta |
+| ID | Question | Status | Answer |
 |---|---|---|---|
 `;
 
-test('init cria .spec, constituição preset e config', () => {
-  const { code, out } = cli('init', '--preset', 'lgpd-educacao');
+test('init creates .spec, constitution preset and config', () => {
+  const { code, out } = cli('init', '--preset', 'lgpd-education');
   assert.equal(code, 0, out);
-  assert.ok(existsSync(path.join(root, '.spec', 'constituicao.md')));
+  assert.ok(existsSync(path.join(root, '.spec', 'constitution.md')));
   assert.ok(existsSync(path.join(root, 'onpspec.config.json')));
-  const constitution = readFileSync(path.join(root, '.spec', 'constituicao.md'), 'utf-8');
+  const constitution = readFileSync(path.join(root, '.spec', 'constitution.md'), 'utf-8');
   assert.match(constitution, /LGPD/);
-  assert.match(constitution, /P-001 \[DEVE\]/);
+  assert.match(constitution, /P-001 \[MUST\]/);
 });
 
-test('new cria feature com templates', () => {
-  const { code, out } = cli('new', 'entrega-dever');
+test('new creates a feature with templates', () => {
+  const { code, out } = cli('new', 'homework-delivery');
   assert.equal(code, 0, out);
-  assert.ok(existsSync(path.join(root, '.spec', 'features', 'entrega-dever', 'spec.md')));
+  assert.ok(existsSync(path.join(root, '.spec', 'features', 'homework-delivery', 'spec.md')));
 });
 
-test('audit acusa AC_SEM_TESTE antes do scaffold', () => {
-  writeFileSync(path.join(root, '.spec', 'features', 'entrega-dever', 'spec.md'), SPEC);
-  // remove tasks do template pra não poluir este passo
-  rmSync(path.join(root, '.spec', 'features', 'entrega-dever', 'tasks.md'));
+test('audit flags AC_NO_TEST before the scaffold', () => {
+  writeFileSync(path.join(root, '.spec', 'features', 'homework-delivery', 'spec.md'), SPEC);
+  // remove the template's tasks so it doesn't pollute this step
+  rmSync(path.join(root, '.spec', 'features', 'homework-delivery', 'tasks.md'));
   const { code, out } = cli('audit');
   assert.equal(code, 1);
-  assert.match(out, /AC_SEM_TESTE/);
+  assert.match(out, /AC_NO_TEST/);
 });
 
-test('scaffold gera teste que falha com a tag @spec', () => {
-  const { code, out } = cli('scaffold', 'entrega-dever');
+test('scaffold generates a test that fails with the @spec tag', () => {
+  const { code, out } = cli('scaffold', 'homework-delivery');
   assert.equal(code, 0, out);
-  const testFile = path.join(root, 'test', 'entrega-dever.spec.test.js');
+  const testFile = path.join(root, 'test', 'homework-delivery.spec.test.js');
   assert.ok(existsSync(testFile));
   const content = readFileSync(testFile, 'utf-8');
   assert.match(content, /@spec:AC-001/);
-  assert.match(content, /Dado: um aluno com tarefa aberta/);
+  assert.match(content, /Given: a student with an open task/);
 });
 
-test('verify com teste falhando registra fail e sai 1', () => {
-  const { code, out } = cli('verify', 'entrega-dever');
+test('verify with a failing test records fail and exits 1', () => {
+  const { code, out } = cli('verify', 'homework-delivery');
   assert.equal(code, 1, out);
   const record = JSON.parse(
-    readFileSync(path.join(root, '.spec', 'verification', 'entrega-dever.json'), 'utf-8')
+    readFileSync(path.join(root, '.spec', 'verification', 'homework-delivery.json'), 'utf-8')
   );
   assert.equal(record.results['AC-001'].status, 'fail');
 });
 
-test('após implementar, verify passa e audit --ci fecha o ciclo', () => {
-  // "implementa": teste real que passa + tasks + testes de princípio da constituição
+test('after implementing, verify passes and audit --ci closes the loop', () => {
+  // "implement": real passing test + tasks + constitution principle tests
   mkdirSync(path.join(root, 'src'), { recursive: true });
   writeFileSync(
-    path.join(root, 'src', 'entrega.js'),
-    `export function statusEntrega(enviadoEm, prazo) {\n  return enviadoEm <= prazo ? 'no prazo' : 'atrasada';\n}\n`
+    path.join(root, 'src', 'delivery.js'),
+    `export function deliveryStatus(submittedAt, deadline) {\n  return submittedAt <= deadline ? 'on time' : 'late';\n}\n`
   );
   writeFileSync(
-    path.join(root, 'test', 'entrega-dever.spec.test.js'),
+    path.join(root, 'test', 'homework-delivery.spec.test.js'),
     `import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statusEntrega } from '../src/entrega.js';
+import { deliveryStatus } from '../src/delivery.js';
 
-test('AC-001: entrega no prazo @spec:AC-001', () => {
-  assert.equal(statusEntrega(1, 2), 'no prazo');
+test('AC-001: on-time delivery @spec:AC-001', () => {
+  assert.equal(deliveryStatus(1, 2), 'on time');
 });
-test('nota nunca exposta @principle:P-001', () => { assert.ok(true); });
-test('acesso a nota registrado @principle:P-002', () => { assert.ok(true); });
-test('menores com base legal @principle:P-003', () => { assert.ok(true); });
+test('grade never exposed @principle:P-001', () => { assert.ok(true); });
+test('grade access logged @principle:P-002', () => { assert.ok(true); });
+test('minors have a legal basis @principle:P-003', () => { assert.ok(true); });
 `
   );
   writeFileSync(
-    path.join(root, '.spec', 'features', 'entrega-dever', 'tasks.md'),
-    `# Tasks\n\n## T-001 — Função de status [concluida]\n\n- Refs: US-001, AC-001\n- Arquivos: src/entrega.js\n`
+    path.join(root, '.spec', 'features', 'homework-delivery', 'tasks.md'),
+    `# Tasks\n\n## T-001 — Status function [done]\n\n- Refs: US-001, AC-001\n- Files: src/delivery.js\n`
   );
 
-  const verify = cli('verify', 'entrega-dever');
+  const verify = cli('verify', 'homework-delivery');
   assert.equal(verify.code, 0, verify.out);
 
   const audit = cli('audit', '--ci');
   assert.equal(audit.code, 0, audit.out);
-  assert.match(audit.out, /auditoria limpa/);
+  assert.match(audit.out, /clean audit/);
 });
 
-test('drift é pego: renomear AC na spec quebra o audit', () => {
+test('drift is caught: renaming an AC in the spec breaks the audit', () => {
   const drifted = SPEC.replace(/AC-001/g, 'AC-050');
-  writeFileSync(path.join(root, '.spec', 'features', 'entrega-dever', 'spec.md'), drifted);
+  writeFileSync(path.join(root, '.spec', 'features', 'homework-delivery', 'spec.md'), drifted);
   const { code, out } = cli('audit', '--ci');
   assert.equal(code, 1);
-  assert.match(out, /TESTE_ORFAO/); // teste aponta pra AC-001 que não existe mais
-  assert.match(out, /AC_SEM_TESTE/); // AC-050 novo não tem teste
-  // restaura
-  writeFileSync(path.join(root, '.spec', 'features', 'entrega-dever', 'spec.md'), SPEC);
+  assert.match(out, /TEST_ORPHAN/); // test still points to AC-001, which no longer exists
+  assert.match(out, /AC_NO_TEST/); // new AC-050 has no test
+  // restore
+  writeFileSync(path.join(root, '.spec', 'features', 'homework-delivery', 'spec.md'), SPEC);
 });
 
-test('status e assumptions rodam sem erro', () => {
+test('status and assumptions run with no error', () => {
   assert.equal(cli('status').code, 0);
   assert.equal(cli('assumptions').code, 0);
 });

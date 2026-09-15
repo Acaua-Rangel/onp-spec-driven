@@ -1,10 +1,11 @@
-// Adaptador OpenSpec: materializa a MESMA feature no formato OpenSpec
-// (specs/<id>/spec.md com Purpose/Requirements/Scenario e frases SHALL) e roda
-// o `openspec validate --specs <id> --strict` REAL, capturando o veredito.
+// OpenSpec adapter: materializes the SAME feature in OpenSpec's format
+// (specs/<id>/spec.md with Purpose/Requirements/Scenario and SHALL phrases) and
+// runs the REAL `openspec validate --specs <id> --strict`, capturing the
+// verdict.
 //
-// Onde a classe de defeito é inexprimível no modelo do OpenSpec (testes,
-// suposições, privacidade, código órfão), a spec materializada valida "limpa" —
-// e isso é exatamente o ponto: a ferramenta não tem como enxergar o defeito.
+// Where the defect class is inexpressible in OpenSpec's model (tests,
+// assumptions, privacy, orphan code), the materialized spec validates "clean" —
+// and that's exactly the point: the tool has no way to see the defect.
 
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import path from 'path';
@@ -12,8 +13,8 @@ import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// caminho para o binário do OpenSpec: variável de ambiente ou o vendorizado
-// por benchmark/setup.sh em benchmark/.vendor/OpenSpec/bin/openspec.js.
+// path to the OpenSpec binary: environment variable or the one vendored by
+// benchmark/setup.sh in benchmark/.vendor/OpenSpec/bin/openspec.js.
 const vendored = path.join(__dirname, '..', '.vendor', 'OpenSpec', 'bin', 'openspec.js');
 export const OPENSPEC_BIN =
   process.env.OPENSPEC_BIN || (existsSync(vendored) ? vendored : null);
@@ -23,14 +24,14 @@ function renderOpenSpecSpec(f) {
   for (const s of f.stories) {
     for (const ac of s.acs) {
       lines.push(`### Requirement: ${ac.title}`, '');
-      // frase normativa SHALL derivada do Então (ou vazia se incompleto)
+      // normative SHALL sentence derived from the Then (or empty if incomplete)
       if (ac.then) {
-        lines.push(`O sistema SHALL garantir que, ${ac.given}, quando ${ac.when}, então ${ac.then}.`, '');
+        lines.push(`The system SHALL guarantee that, given ${ac.given}, when ${ac.when}, then ${ac.then}.`, '');
       } else {
-        // requisito incompleto: sem frase normativa clara
-        lines.push(`O sistema trata ${ac.title.toLowerCase()}.`, '');
+        // incomplete requirement: no clear normative sentence
+        lines.push(`The system handles ${ac.title.toLowerCase()}.`, '');
       }
-      // cenário — omitido se o defeito é "incompleto/sem comportamento"
+      // scenario — omitted if the defect is "incomplete/no behavior"
       if (ac.then) {
         lines.push(`#### Scenario: ${ac.title}`, '');
         lines.push(`- **WHEN** ${ac.when}`);
@@ -43,7 +44,7 @@ function renderOpenSpecSpec(f) {
 
 export function runOpenSpec(scenario, workDir) {
   if (!OPENSPEC_BIN || !existsSync(OPENSPEC_BIN)) {
-    return { available: false, detected: false, note: 'binário do OpenSpec não encontrado' };
+    return { available: false, detected: false, note: 'OpenSpec binary not found' };
   }
   const f = scenario.feature;
   const root = path.join(workDir, 'openspec');
@@ -58,7 +59,7 @@ export function runOpenSpec(scenario, workDir) {
     env: { ...process.env, OPENSPEC_TELEMETRY: '0', NODE_TEST_CONTEXT: undefined, NODE_OPTIONS: undefined },
   });
   const out = `${proc.stdout || ''}\n${proc.stderr || ''}`;
-  // OpenSpec imprime "failed" quando a validação estrutural falha
+  // OpenSpec prints "failed" when structural validation fails
   const failed = /\d+ failed/.test(out) && !/0 failed/.test(out);
   const invalid = /is not valid|✗/.test(out);
   const detected = failed || invalid;

@@ -1,6 +1,6 @@
 ---
 name: onp-spec-driven
-description: Desenvolvimento spec-anchored nativo para Antigravity — a especificação continua verdadeira porque é auditada mecanicamente contra o código. Fluxo Especificar → Projetar → Tarefas → Plano → Executar → Auditar → Aprender, com rastreabilidade história→critério de aceite→tarefa→teste, definição de pronto executável (cada critério de aceite vira teste anotado), suposições e perguntas como cidadãs de primeira classe, constituição verificável (preset LGPD/educação), lições aprendidas com lastro mecânico e plano de execução com PARALELISMO OPCIONAL: o agente apresenta o plano recomendado e SEMPRE pergunta QUAIS tarefas o usuário quer paralelizar (faixas com git worktrees + agentes paralelos nativos do Antigravity via --paralelizar, ou uma tarefa após a outra via --sequencial), avisa que a execução roda em background e, durante ela, posta no chat a cada 1 minuto a tabela de andamento (o que está rodando e o que não está) + resumo geral — com resumo completo ao final. Integração com Artifacts (task.md, implementation_plan.md, walkthrough.md) e Slash Commands (/goal, /grill-me, /schedule, /learn). Motor mecânico EMBARCADO na skill (zero instalação — roda com o node do ambiente). Use ao planejar features, implementar com verificação, ou auditar uma implementação contra a spec. Gatilhos "especificar feature", "nova feature", "implementar", "auditar spec", "verificar", "plano de execução", "executar em paralelo", "o que não tem teste", "lições aprendidas".
+description: Native spec-anchored development for Antigravity — the spec stays true because it's mechanically audited against the code. Specify → Design → Tasks → Plan → Execute → Audit → Learn flow, with story→acceptance-criterion→task→test traceability, an executable definition of done (every acceptance criterion becomes an annotated test), assumptions and open questions as first-class citizens, a verifiable constitution (LGPD/education preset), lessons learned with mechanical grounding, and an execution plan with OPTIONAL PARALLELISM: the agent presents the recommended plan and ALWAYS asks WHICH tasks the user wants to parallelize (lanes with git worktrees + Antigravity's native parallel agents via --parallelize, or one task after another via --sequential), warns that execution runs in the background and, during it, posts a progress table in the chat every 1 minute (what's running and what isn't) + an overall summary — with a full summary at the end. Integrates with Artifacts (task.md, implementation_plan.md, walkthrough.md) and Slash Commands (/goal, /grill-me, /schedule, /learn). Mechanical engine EMBEDDED in the skill (zero install — runs with the environment's node). Use when planning features, implementing with verification, or auditing an implementation against the spec. Triggers "specify feature", "new feature", "implement", "audit spec", "verify", "execution plan", "run in parallel", "what has no test", "lessons learned".
 license: MIT
 metadata:
   author: Vitor Manoel — O Novo Programador
@@ -8,327 +8,370 @@ metadata:
   agent: antigravity
 ---
 
-# onp-spec-driven — a especificação que continua verdadeira (Antigravity)
+# onp-spec-driven — the spec that stays true (Antigravity)
 
-A maioria das ferramentas de SDD é **spec-first**: a especificação gera código,
-o código evolui, e a especificação vira mentira. Esta é **spec-anchored**: a
-especificação é auditada mecanicamente contra o código, o tempo todo. Você não
-confia que o agente obedeceu — **a máquina prova, via exit code**.
+Most SDD tools are **spec-first**: the spec generates code, the code
+evolves, and the spec becomes a lie. This one is **spec-anchored**: the spec
+is mechanically audited against the code, at all times. You don't trust that
+the agent obeyed — **the machine proves it, via exit code**.
 
 ```
-┌───────────┐  ┌────────┐  ┌───────┐  ┌───────┐  ┌────────┐  ┌───────┐
-│ESPECIFICAR│→ │PROJETAR│→ │TAREFAS│→ │ PLANO │→ │EXECUTAR│→ │AUDITAR│
-└───────────┘  └────────┘  └───────┘  └───────┘  └────────┘  └───────┘
-   sempre      se preciso   se grande  2+ tarefas   sempre    SEMPRE (gate)
+┌────────┐  ┌──────┐  ┌───────┐  ┌───────┐  ┌────────┐  ┌───────┐
+│ SPECIFY│→ │DESIGN│→ │ TASKS │→ │ PLAN  │→ │EXECUTE │→ │ AUDIT │
+└────────┘  └──────┘  └───────┘  └───────┘  └────────┘  └───────┘
+   always     if needed  if large  2+ tasks    always    ALWAYS (gate)
 ```
 
-## Vocabulário — fale sempre em português simples
+## Vocabulary — always speak in plain language
 
-Os arquivos usam **códigos de rastreio** curtos (é o que liga especificação,
-tarefas e testes na máquina). Mas com o usuário você fala **sempre o nome por
-extenso** — o código vai entre parênteses quando precisar dele:
+**Write the artifacts in English.** The spec, tasks, tests and commit messages
+always stay in English — the tracking codes, statuses and Given/When/Then
+keywords are English, so writing them in another language breaks the
+consistency the machine relies on. Keep TALKING to the user in their own
+language; only the files are in English.
 
-| Código | Nome que você usa com o usuário |
+The files use short **tracking codes** (that's what links spec, tasks, and
+tests together for the machine). But with the user you always speak **the
+name in full** — the code goes in parentheses only when it's needed:
+
+| Code | Name you use with the user |
 |---|---|
-| US-xxx | **história de usuário** — quem precisa, o que precisa e por quê |
-| AC-xxx | **critério de aceite** — resultado observável que um teste checa |
-| T-xxx | **tarefa** — passo de implementação |
-| ASM-xxx | **suposição** — lacuna preenchida com palpite, ainda sem confirmação |
-| Q-xxx | **pergunta em aberto** — decisão que falta o dono do produto tomar |
-| P-xxx | **princípio** (da constituição) — restrição inegociável do projeto |
-| DoD | **definição de pronto** — o conjunto de critérios de aceite com prova |
+| US-xxx | **user story** — who needs it, what they need, and why |
+| AC-xxx | **acceptance criterion** — observable outcome a test checks |
+| T-xxx | **task** — implementation step |
+| ASM-xxx | **assumption** — a gap filled with a guess, still unconfirmed |
+| Q-xxx | **open question** — a decision the product owner still needs to make |
+| P-xxx | **principle** (from the constitution) — non-negotiable project constraint |
+| DoD | **definition of done** — the set of acceptance criteria with proof |
 
-Exemplo: diga "o critério de aceite AC-003 (aviso de atraso) ainda não tem
-teste", nunca "o AC-003 falta @spec tag". Nunca exija que o usuário conheça
-as siglas para entender o que você disse.
+Example: say "acceptance criterion AC-003 (late warning) still has no
+test", never "AC-003 is missing an @spec tag". Never require the user to
+know the acronyms to understand what you said.
 
-## Interação — use todo o potencial do Antigravity
+## Interaction — use the full potential of Antigravity
 
-Esta skill roda nativamente dentro do Antigravity. Use os recursos nativos
-(Artifacts e Slash Commands) para deixar o fluxo visível e interativo, sem
-virar burocracia:
+This skill runs natively inside Antigravity. Use the native features
+(Artifacts and Slash Commands) to keep the flow visible and interactive,
+without turning it into bureaucracy:
 
-- **Explique o que fez e onde está**: depois de CADA ação, diga em português
-  simples (1) o que foi feito, (2) o caminho de cada arquivo criado ou
-  alterado, (3) qual é o próximo passo. O usuário nunca deveria precisar
-  perguntar "cadê o arquivo?" nem "e agora?".
-- **Lista de tarefas (Artifact de tasks)**: ao iniciar a execução, crie e
-  mantenha o Artifact de lista de tarefas do Antigravity (task.md) com um item
-  por tarefa (T-xxx), atualizando `[ ]`, `[/]`, `[x]` a cada passo — o usuário
-  acompanha visualmente. Deixe o Antigravity resolver onde o artifact mora;
-  nunca assuma um caminho interno fixo.
-- **Projeto e decisões (Artifact `implementation_plan.md`)**: na fase Projetar
-  e no Plano de execução, escreva o plano nesse artifact com
-  `request_feedback = true`. Mapeie as perguntas em aberto (Q-xxx) e as
-  suposições (ASM-xxx) para forçar a revisão do usuário ANTES da execução.
-  Avise que ele pode usar `/grill-me` para responder em modo entrevista.
-- **Validação e resumo (Artifact `walkthrough.md`)**: quando `verify` e
-  `audit --ci` saírem limpos, atualize o walkthrough com os resultados, as
-  lições registradas e a prova mecânica (a saída do audit).
-- **Slash Commands** — recomende no momento certo:
-  - `/goal`: para fechar uma feature inteira — itere implementação + `verify`
-    + `audit --ci` até exit 0. Persistir é implementar de verdade; as regras
-    do contrato (abaixo) continuam valendo dentro do `/goal`.
-  - `/grill-me`: sessão de entrevista para esclarecer requisitos e design
-    (resolve Q-xxx e confirma ASM-xxx).
-  - `/schedule`: monitorar suítes de teste longas ou tarefas em background.
-  - `/learn`: depois de resolver um problema difícil e específico do projeto,
-    sugira `/learn` para o Antigravity guardar o comportamento — além das
-    lições mecânicas do `onp-spec licoes`.
-- **Traduza a saída do motor**: depois de cada comando, resuma em 1–3 frases
-  de português simples o que a máquina disse e qual o próximo passo. Cole a
-  saída bruta também (a prova é ela), mas nunca a entregue sozinha.
-- **Respeite o usuário avançado**: se o usuário demonstra conhecer o fluxo
-  (usa os códigos, pede comandos diretos), corte as explicações didáticas e
-  vá direto ao ponto. A tradução encurta; o rigor (verify + audit) nunca.
+- **Explain what you did and where it is**: after EVERY action, say in
+  plain language (1) what was done, (2) the path of every file created or
+  changed, (3) what the next step is. The user should never need to ask
+  "where's the file?" or "now what?".
+- **Task list (tasks Artifact)**: when starting execution, create and
+  maintain Antigravity's task list Artifact (task.md) with one item per
+  task (T-xxx), updating `[ ]`, `[/]`, `[x]` at each step — the user
+  follows along visually. Let Antigravity resolve where the artifact
+  lives; never assume a fixed internal path.
+- **Design and decisions (`implementation_plan.md` Artifact)**: during the
+  Design phase and the execution Plan, write the plan in that artifact
+  with `request_feedback = true`. Map the open questions (Q-xxx) and
+  assumptions (ASM-xxx) to force user review BEFORE execution. Let them
+  know they can use `/grill-me` to answer in interview mode.
+- **Validation and summary (`walkthrough.md` Artifact)**: once `verify`
+  and `audit --ci` come back clean, update the walkthrough with the
+  results, the recorded lessons, and the mechanical proof (the audit
+  output).
+- **Slash Commands** — recommend them at the right moment:
+  - `/goal`: to close out an entire feature — iterate implementation +
+    `verify` + `audit --ci` until exit 0. Persisting means actually
+    implementing; the contract rules (below) still apply inside `/goal`.
+  - `/grill-me`: interview session to clarify requirements and design
+    (resolves Q-xxx and confirms ASM-xxx).
+  - `/schedule`: monitor long test suites or background tasks.
+  - `/learn`: after solving a hard, project-specific problem, suggest
+    `/learn` so Antigravity retains the behavior — on top of the
+    mechanical lessons from `onp-spec lessons`.
+- **Translate the engine's output**: after each command, summarize in 1–3
+  plain-language sentences what the machine said and what the next step
+  is. Paste the raw output too (that's the proof), but never hand it over
+  alone.
+- **Respect the advanced user**: if the user shows they know the flow
+  (uses the codes, asks for direct commands), cut the tutorial-style
+  explanations and get straight to the point. The translation shortens
+  things; the rigor (verify + audit) never does.
 
-## O motor embarcado (zero instalação)
+## The embedded engine (zero install)
 
-O motor mecânico mora DENTRO desta skill, em `scripts/onp-spec.mjs` — resolvido
-**relativo ao diretório desta SKILL.md** (nunca assuma um caminho fixo de
-instalação). Não existe nada para instalar: sem npm, sem npx, sem CLI global.
+The mechanical engine lives INSIDE this skill, at `scripts/onp-spec.mjs` —
+resolved **relative to this SKILL.md's directory** (never assume a fixed
+install path). There's nothing to install: no npm, no npx, no global CLI.
 
-Todos os comandos rodam **a partir da raiz do projeto do usuário**:
+All commands run **from the root of the user's project**:
 
 ```bash
-node <dir-desta-skill>/scripts/onp-spec.mjs <comando>
+node <this-skill-dir>/scripts/onp-spec.mjs <command>
 ```
 
-Comandos: `init [--preset base|lgpd-educacao]` · `new <feature>` ·
-`plano <feature> [--agents antigravity] [--paralelizar T-xxx,T-yyy] [--sequencial]` ·
-`resumo [feature] [--tabela] [--gravar --origem ia --texto "..."]` ·
-`tarefa <feature> <T-xxx> <status>` ·
+Commands: `init [--preset base|lgpd-education]` · `new <feature>` ·
+`plan <feature> [--agents antigravity] [--parallelize T-xxx,T-yyy] [--sequential]` ·
+`summary [feature] [--table] [--save --source ai --text "..."]` ·
+`task <feature> <T-xxx> <status>` ·
 `scaffold <feature> [--force]` · `verify <feature>` ·
-`audit [--ci] [--json] [--md <arquivo>]` · `status` · `assumptions` ·
-`licoes <add|list|sugerir|penalizar|status>`.
+`audit [--ci] [--json] [--md <file>]` · `status` · `assumptions` ·
+`lessons <add|list|suggest|penalize|status>`.
 
-Abaixo, `onp-spec <comando>` é abreviação dessa invocação.
+Below, `onp-spec <command>` abbreviates this invocation.
 
-**Degradação graciosa** — se `node` não existir no ambiente: execute a
-auditoria manualmente (releia especificação/tarefas/testes cruzando cada
-problema do catálogo abaixo) e rotule o resultado, textualmente, como
-**`PROVA FRACA (auditoria manual)`**. Nunca apresente auditoria manual como se
-fosse o gate mecânico.
+**Graceful degradation** — if `node` doesn't exist in the environment:
+perform the audit manually (reread the spec/tasks/tests, cross-checking
+each problem in the catalog below) and label the result, in text, as
+**`WEAK PROOF (manual audit)`**. Never present a manual audit as if it were
+the mechanical gate.
 
-## Contrato de execução — inegociável
+## Execution contract — non-negotiable
 
-1. **Todo critério de aceite vira um teste anotado** com `@spec:AC-xxx` no
-   título. Sem teste anotado, o critério não existe para a máquina.
-2. **Quem decide se um critério de aceite passou é o test runner**, nunca
-   você. `onp-spec verify` roda os testes e grava a prova. Você não pode
-   declarar vitória. **Teste pulado (skip/todo) não é prova** — o motor recusa
-   e o audit acusa.
-3. **A feature só fecha quando `onp-spec audit --ci` sai com código 0.** Rodar
-   o audit e **colar a saída** é o último passo, sempre — o walkthrough.md
-   resume, mas a prova é a saída bruta.
-4. **Suposições e perguntas em aberto são obrigatórias.** Preencheu lacuna sem
-   confirmar? É uma suposição. Faltou informação? É uma pergunta em aberto. A
-   seção ausente também é problema (`SECAO_AUSENTE`) — se não houver nenhuma,
-   escreva "Nenhuma." e desconfie.
-5. **A constituição manda.** Princípios [DEVE] são verificados; violá-los
-   quebra o audit. Nunca conserte o princípio para "fazer passar" — conserte o
-   código.
-6. **Nunca enfraqueça, pule ou apague um teste para passar.** Isso vale
-   TAMBÉM dentro do `/goal`: "não desista até o exit 0" significa iterar a
-   IMPLEMENTAÇÃO, jamais afrouxar o gate. Fora do `/goal`, se o audit falhar
-   3 vezes seguidas no mesmo problema, PARE e escale ao usuário via
-   `implementation_plan.md` com os achados ranqueados — não itere para sempre
-   nem contorne o gate.
+1. **Every acceptance criterion becomes an annotated test** with
+   `@spec:AC-xxx` in the title. Without an annotated test, the criterion
+   doesn't exist for the machine.
+2. **The test runner decides whether an acceptance criterion passed**,
+   never you. `onp-spec verify` runs the tests and records the proof. You
+   can't declare victory. **A skipped test (skip/todo) is not proof** —
+   the engine refuses it and the audit flags it.
+3. **The feature only closes when `onp-spec audit --ci` exits with code
+   0.** Running the audit and **pasting the output** is the last step,
+   always — the walkthrough.md summarizes it, but the raw output is the
+   proof.
+4. **Assumptions and open questions are mandatory.** Filled a gap without
+   confirming it? That's an assumption. Missing information? That's an
+   open question. The absent section is also a problem
+   (`SECTION_MISSING`) — if there are none, write "None." and be
+   suspicious.
+5. **The constitution rules.** `[MUST]` principles are verified; violating
+   them breaks the audit. Never fix the principle to "make it pass" — fix
+   the code.
+6. **Never weaken, skip, or delete a test to make it pass.** This ALSO
+   applies inside `/goal`: "don't give up until exit 0" means iterating
+   the IMPLEMENTATION, never loosening the gate. Outside `/goal`, if the
+   audit fails 3 times in a row on the same problem, STOP and escalate to
+   the user via `implementation_plan.md` with the findings ranked — don't
+   iterate forever or work around the gate.
 
-## Auto-dimensionamento
+## Auto-sizing
 
-| Escopo | Especificar | Projetar | Tarefas | Plano | Executar |
+| Scope | Specify | Design | Tasks | Plan | Execute |
 |---|---|---|---|---|---|
-| Pequeno (≤3 arquivos) | spec enxuta | pular | implícito | pular | implementar + verify + audit |
-| Médio (<10 tarefas) | spec completa | inline | inline | se 2+ tarefas | implementar + verify + audit |
-| Grande (multi-componente) | spec + design | design.md | tasks.md | sempre | por faixa + verify + audit |
+| Small (≤3 files) | lean spec | skip | implicit | skip | implement + verify + audit |
+| Medium (<10 tasks) | full spec | inline | inline | if 2+ tasks | implement + verify + audit |
+| Large (multi-component) | spec + design | design.md | tasks.md | always | per lane + verify + audit |
 
-**Sempre obrigatórios:** Especificar e Auditar.
-**Válvula de segurança:** mesmo pulando Tarefas, comece o Executar listando os
-passos atômicos. Se aparecerem >5 passos ou dependências entre eles, PARE e
-crie `tasks.md` — a fase foi pulada por engano.
+**Always mandatory:** Specify and Audit.
+**Safety valve:** even if Tasks is skipped, start Execute by listing the
+atomic steps. If more than 5 steps show up or dependencies between them
+appear, STOP and create `tasks.md` — the phase was skipped by mistake.
 
-## Passo a passo no Antigravity
+## Step by step in Antigravity
 
-### 1. Especificar
+### 1. Specify
 
-- **Antes de escrever, carregue o guia aprendido**: `onp-spec licoes list`
-  (em projeto grande, filtre: `--escopo <dominio>`).
-- `onp-spec new <feature>` cria `.spec/features/<feature>/spec.md` e `tasks.md`
-  com códigos de rastreio contínuos (únicos no projeto inteiro).
-- Escreva as **histórias de usuário (US-xxx)** e os **critérios de aceite
-  (AC-xxx)** em Dado/Quando/Então, em linguagem que o dono do produto entende.
-- **Registre suposições (ASM-xxx) e perguntas em aberto (Q-xxx)** com status
-  honesto (`aberta`). Usuário presente? Sugira `/grill-me` e registre as
-  respostas na especificação.
-- Rode `onp-spec audit` e leia os problemas apontados.
-- Detalhes de escrita: [escrevendo-specs.md](references/escrevendo-specs.md).
+- **Before writing, load the learned guide**: `onp-spec lessons list`
+  (on a large project, filter: `--scope <domain>`).
+- **Before specifying AND before detailing the tasks, web-search the
+  domain's best practice**: every feature with a weighty technical
+  decision (security, cryptography, authentication, payments,
+  concurrency, formats, accessibility...) requires discovering the state
+  of the art BEFORE writing acceptance criteria and tasks. Do a web
+  search and bring what you found into the spec (it becomes an observable
+  acceptance criterion) and into the constitution (it becomes a `[MUST]`
+  principle); record the source, and if it can't be confirmed on the
+  spot, leave it as an assumption (ASM-xxx). E.g.: password hashing isn't
+  "store the hash" — current practice is **Argon2id** with a **global
+  pepper** + **per-user salt** and a cost calibrated against GPU/brute-force
+  attacks.
+- **When unsure HOW to implement, ask the user's preference — always**:
+  when there's more than one reasonable path (library, approach, format,
+  trade-off) and the research doesn't decide it on its own, STOP and ask
+  with concrete options (pros/cons in one line). Never decide alone
+  something that's the user's call; record the answer in the spec, and
+  if you proceed without confirming, make it explicit as an assumption
+  (ASM-xxx).
+- `onp-spec new <feature>` creates `.spec/features/<feature>/spec.md` and
+  `tasks.md` with continuous tracking codes (unique across the whole
+  project).
+- Write the **user stories (US-xxx)** and **acceptance criteria (AC-xxx)**
+  in Given/When/Then, in language the product owner understands.
+- **Record assumptions (ASM-xxx) and open questions (Q-xxx)** with an
+  honest status (`open`). User present? Suggest `/grill-me` and record
+  the answers in the spec.
+- Run `onp-spec audit` and read the flagged problems.
+- Writing details: [writing-specs.md](references/writing-specs.md).
 
-### 2. Projetar (features grandes)
+### 2. Design (large features)
 
-Escreva o Artifact `implementation_plan.md` com arquitetura e componentes,
-`request_feedback = true`. Cada decisão não-óbvia vira suposição (você
-assumiu) ou pergunta em aberto (precisa do dono do produto). Destaque as duas
-listas no plano.
+Write the `implementation_plan.md` Artifact with architecture and
+components, `request_feedback = true`. Every non-obvious decision becomes
+an assumption (you assumed it) or an open question (needs the product
+owner). Highlight both lists in the plan.
 
-### 3. Tarefas
+### 3. Tasks
 
-- **Âncora mecânica primeiro:** escreva as tarefas em
-  `.spec/features/<feature>/tasks.md` com `Refs:` (histórias/critérios) e
-  `Arquivos:` (separados por vírgula) — é isso que o audit e o plano leem.
-  Campos opcionais por tarefa: `Modelo:` e `Esforço:` (baixo|medio|alto|xalto|max).
-- **Visualização depois:** espelhe as tarefas no Artifact de lista de tarefas
-  do Antigravity para o acompanhamento `[ ]`/`[/]`/`[x]`.
-- **Fechou o tasks.md? Anuncie o paralelismo e PERGUNTE QUAIS.** Rode
-  `onp-spec plano <feature>` e apresente ao usuário, sem ele pedir, o plano
-  como RECOMENDAÇÃO: *"X destas Y tarefas podem rodar EM PARALELO, em N
-  faixas — recomendo assim."* Em seguida pergunte (no chat ou via
-  `implementation_plan.md` com `request_feedback = true`): **quais tarefas
-  ele quer paralelizar?** — todas (a recomendação), um subconjunto, ou
-  nenhuma (uma após a outra). A escolha é dele — nunca execute sem essa
-  resposta, e nunca deixe o paralelismo como segredo do motor.
+- **Mechanical anchor first:** write the tasks in
+  `.spec/features/<feature>/tasks.md` with `Refs:` (stories/criteria) and
+  `Files:` (comma-separated) — that's what the audit and the plan read.
+  Optional per-task fields: `Model:` and `Effort:`
+  (low|medium|high|xhigh|max).
+- **Visualization comes after:** mirror the tasks in Antigravity's task
+  list Artifact for `[ ]`/`[/]`/`[x]` tracking.
+- **Closed tasks.md? Announce parallelism and ASK WHICH.** Run
+  `onp-spec plan <feature>` and present the plan to the user, unprompted,
+  as a RECOMMENDATION: *"X of these Y tasks can run IN PARALLEL, across
+  N lanes — I recommend it this way."* Then ask (in chat or via
+  `implementation_plan.md` with `request_feedback = true`): **which
+  tasks do they want to parallelize?** — all of them (the
+  recommendation), a subset, or none (one after another). It's their
+  choice — never execute without that answer, and never leave the
+  parallelism as the engine's secret.
 
-### 4. Plano de execução (2+ tarefas pendentes)
+### 4. Execution plan (2+ pending tasks)
 
-- **QUAIS tarefas paralelizar é escolha do USUÁRIO — pergunte antes de
-  executar** (no `implementation_plan.md` com `request_feedback = true`, ou
-  direto no chat; se ainda não perguntou na fase Tarefas, pergunte agora).
-  Escolheu todas → use o plano como está. Escolheu um subconjunto →
-  regenere com `onp-spec plano <feature> --paralelizar T-xxx,T-yyy` e siga
-  esse. Escolheu nenhuma → regenere com `--sequencial`. Sem resposta, não
+- **WHICH tasks to parallelize is the USER's choice — ask before
+  executing** (in `implementation_plan.md` with `request_feedback =
+  true`, or directly in chat; if you didn't ask during the Tasks phase,
+  ask now). Chose all → use the plan as-is. Chose a subset → regenerate
+  with `onp-spec plan <feature> --parallelize T-xxx,T-yyy` and follow
+  that. Chose none → regenerate with `--sequential`. No answer, don't
   execute.
-- `onp-spec plano <feature>` (se a detecção errar, force com
-  `--agents antigravity`). O motor agrupa tarefas de **arquivos disjuntos**
-  em **faixas paralelas** — 1 faixa = 1 git worktree + 1 branch + 1 janela de
-  contexto limpa — e grava `.spec/features/<feature>/plano-execucao.md` com:
-  os comandos de worktree, **um prompt pronto por faixa**, a ordem de merge,
-  a gestão de commits e o gate final. Com `--paralelizar`: só as tarefas
-  ESCOLHIDAS entram nas faixas (as demais rodam uma após a outra, ao final).
-  Com `--sequencial`: um prompt por tarefa, na ordem, para executar na
-  árvore principal — sem worktrees.
-- Espelhe o resumo (faixas ou ordem, branches) no `implementation_plan.md`
-  com `request_feedback = true` — o usuário aprova ANTES de executar.
-- **Execução paralela usa os agentes nativos do Antigravity**: um agente NOVO
-  por faixa (janela limpa), cada um no seu worktree, com o prompt do plano.
-  No modo sequencial, você mesmo executa os prompts na ordem. Esta skill
-  NUNCA depende do CLI do Claude — isso é da skill irmã do Claude Code.
-- **Antes de executar, AVISE — sempre**: diga ao usuário, em uma frase, que
-  as alterações vão rodar em **background** (os agentes trabalham nas
-  janelas deles), que a cada 1 minuto você posta no chat a **tabela de
-  andamento**, e que ao final ele recebe o **resumo completo** da execução.
-  Só então despache os agentes.
-- **Tabela + resumo a cada 1 minuto (obrigatórios enquanto executa)**: poste
-  no chat a **tabela de andamento** (`onp-spec resumo <feature> --tabela` —
-  uma linha por tarefa: qual está rodando, qual não está, o que
-  concluiu/falhou) e um parágrafo curto (2 a 4 frases, português simples) do
-  que está acontecendo, registrando-o no ledger:
-  `onp-spec resumo <feature> --gravar --origem ia --texto "..."`. Sem tempo
-  de escrever? `onp-spec resumo <feature> --gravar` registra o resumo do
-  motor. O usuário nunca fica sem saber o que está rolando.
-- **Marque o progresso no ledger** (é disso que a tabela e o resumo são
-  feitos): ao iniciar/terminar cada tarefa, rode o comando `evento` que o
-  plano-execucao.md traz pronto (estado `executando`/`concluida`/`falhou`) e,
-  ao terminar, `onp-spec tarefa <feature> <T-xxx> concluida`.
-- **Terminou? Entregue o resumo completo**: a tabela final, o que cada
-  tarefa fez (commits), o que falhou (se algo falhou) e a saída do gate
-  (verify + audit) colada e traduzida em uma frase.
-- Feature pequena ou usuário quer simples? Execute as faixas você mesmo, em
-  sequência — o plano continua valendo como roteiro de branches e commits.
+- `onp-spec plan <feature>` (if detection gets it wrong, force it with
+  `--agents antigravity`). The engine groups tasks with **disjoint
+  files** into **parallel lanes** — 1 lane = 1 git worktree + 1 branch +
+  1 clean context window — and writes
+  `.spec/features/<feature>/plan-execution.md` with: the worktree
+  commands, **a ready-made prompt per lane**, the merge order, commit
+  management, and the final gate. With `--parallelize`: only the CHOSEN
+  tasks go into lanes (the rest run one after another, at the end). With
+  `--sequential`: one prompt per task, in order, to run on the main tree
+  — no worktrees.
+- Mirror the summary (lanes or order, branches) in
+  `implementation_plan.md` with `request_feedback = true` — the user
+  approves BEFORE execution.
+- **Parallel execution uses Antigravity's native agents**: a NEW agent
+  per lane (clean window), each in its own worktree, with the plan's
+  prompt. In sequential mode, you run the prompts yourself, in order.
+  This skill NEVER depends on the Claude CLI — that's the sibling
+  Claude Code skill.
+- **Before executing, WARN — always**: tell the user, in one sentence,
+  that the changes will run in the **background** (the agents work in
+  their own windows), that every 1 minute you'll post the **progress
+  table** in the chat, and that at the end they'll get the **full
+  summary** of the run. Only then dispatch the agents.
+- **Table + summary every 1 minute (mandatory while running)**: post the
+  **progress table** in the chat (`onp-spec summary <feature> --table` —
+  one line per task: what's running, what isn't, what finished/failed)
+  and a short paragraph (2 to 4 sentences, plain language) of what's
+  happening, recording it in the ledger:
+  `onp-spec summary <feature> --save --source ai --text "..."`. No time
+  to write it? `onp-spec summary <feature> --save` records the engine's
+  summary. The user is never left not knowing what's going on.
+- **Mark progress in the ledger** (that's what the table and summary are
+  built from): when starting/finishing each task, run the `event`
+  command that plan-execution.md provides ready-made (state
+  `running`/`done`/`failed`) and, when done, `onp-spec task <feature>
+  <T-xxx> done`.
+- **Finished? Deliver the full summary**: the final table, what each
+  task did (commits), what failed (if anything did), and the gate's
+  output (verify + audit) pasted and translated into one sentence.
+- Small feature or the user wants it simple? Run the lanes yourself, in
+  sequence — the plan still holds as the branch/commit roadmap.
 
-### 5. Executar
+### 5. Execute
 
-- Vá marcando `[/]` e `[x]` no Artifact de tarefas enquanto o tasks.md
-  mecânico é atualizado com `onp-spec tarefa <feature> <T-xxx> <status>`.
-- `onp-spec scaffold <feature>` gera o esqueleto de teste **que falha** para
-  cada critério de aceite sem teste — a definição de pronto nasce executável.
-- Implemente até os testes passarem. **1 tarefa = 1 commit atômico**
-  (mensagem: `T-003 <feature>: <título>`). Marque `[concluida]` só com prova.
-- Terminou uma faixa? Merge `--no-ff` na branch de trabalho, na ordem do
-  plano; conflito interrompe e pede o usuário.
+- Mark `[/]` and `[x]` in the tasks Artifact as the mechanical tasks.md
+  gets updated with `onp-spec task <feature> <T-xxx> <status>`.
+- `onp-spec scaffold <feature>` generates a **failing** test skeleton for
+  every acceptance criterion without a test — the definition of done is
+  born executable.
+- Implement until the tests pass. **1 task = 1 atomic commit** (message:
+  `T-003 <feature>: <title>`). Mark `[done]` only with proof.
+- Finished a lane? Merge `--no-ff` into the work branch, in plan order; a
+  conflict stops it and asks the user.
 
-### 6. Verificar e Auditar (o gate)
+### 6. Verify and Audit (the gate)
 
-- `onp-spec verify <feature>` — roda os testes e grava a prova por critério em
-  `.spec/verification/<feature>.json`. Só PASS conta (skip não é prova).
-- `onp-spec audit --ci` — o veredito. Exit 0 = alinhado. **Cole a saída na
-  conversa**, traduza em uma frase, e então atualize o `walkthrough.md`.
-- Falhou? Corrija e re-audite — em `/goal`, continue até sair 0 (iterando a
-  implementação); fora dele, no máximo 3 iterações no mesmo problema antes de
-  escalar ao usuário.
-- Fluxo completo com exemplo: [fluxo.md](references/fluxo.md).
+- `onp-spec verify <feature>` — runs the tests and records the proof per
+  criterion in `.spec/verification/<feature>.json`. Only PASS counts
+  (skip is not proof).
+- `onp-spec audit --ci` — the verdict. Exit 0 = aligned. **Paste the
+  output in the conversation**, translate it in one sentence, and then
+  update `walkthrough.md`.
+- Failed? Fix and re-audit — inside `/goal`, keep going until it exits 0
+  (iterating the implementation); outside it, at most 3 iterations on the
+  same problem before escalating to the user.
+- Full flow with an example: [flow.md](references/flow.md).
 
-### 7. Aprender (fecha o ciclo)
+### 7. Learn (closes the loop)
 
-Depois que o audit sai 0: o caminho até aqui ficou registrado sozinho no
-histórico de sinais (todo problema de audit e toda falha/skip de verify).
+After the audit exits 0: the path to get here was recorded on its own in
+the signal history (every audit problem and every verify failure/skip).
 
-- `onp-spec licoes sugerir` — o motor aponta sinais que recorreram em
-  features distintas e ainda não têm lição.
-- Registre **no máximo 3 lições** com `onp-spec licoes add --sinal <CODIGO>
-  --feature <f> --fonte <AC-xxx> --texto "regra geral em uma frase"`.
-  O motor RECUSA lição sem sinal real (`LICAO_SEM_LASTRO`) — não force.
-- **Caminho limpo → nenhuma lição.** Isso é correto, não é omissão.
-- Feche o Artifact `walkthrough.md` com: o que foi entregue, onde está cada
-  arquivo, a saída do audit e as lições registradas.
-- Fraseado, promoção, penalização e escala: [licoes.md](references/licoes.md).
+- `onp-spec lessons suggest` — the engine points out signals that
+  recurred across distinct features and still have no lesson.
+- Record **at most 3 lessons** with `onp-spec lessons add --signal
+  <CODE> --feature <f> --source <AC-xxx> --text "general rule in one
+  sentence"`. The engine REFUSES a lesson without a real signal
+  (`LESSON_NO_GROUNDING`) — don't force it.
+- **Clean path → no lesson.** That's correct, not an omission.
+- Close out the `walkthrough.md` Artifact with: what was delivered, where
+  each file is, the audit output, and the recorded lessons.
+- Wording, promotion, penalization and scale: [lessons.md](references/lessons.md).
 
-## Catálogo de problemas que o audit aponta
+## Catalog of problems that the audit flags
 
-O audit imprime cada problema com o nome legível na frente e o código estável
-entre parênteses (o código serve para CI e para `licoes add --sinal`). Ao
-conversar com o usuário, use o nome legível.
+The audit prints each problem with the readable name up front and the
+stable code in parentheses (the code is used for CI and for `lessons add
+--signal`). When talking to the user, use the readable name.
 
-| Problema (código) | O que significa | O que fazer |
+| Problem (code) | What it means | What to do |
 |---|---|---|
-| critério de aceite sem teste (AC_SEM_TESTE) | requisito sem prova | escreva o teste com `@spec:AC-xxx` no título |
-| critério de aceite sem prova (AC_SEM_PROVA) | teste existe, nunca passou (ou foi PULADO) | rode `verify`; skip não é prova |
-| teste órfão (TESTE_ORFAO) | teste aponta pra critério que sumiu (drift!) | a especificação mudou — atualize o teste |
-| referência quebrada (REF_QUEBRADA) | tarefa cita história/critério inexistente | corrija a referência |
-| tarefa concluída sem prova (TASK_CONCLUIDA_SEM_PROVA) | tarefa [concluida] sem critério provado | verifique ou reabra a tarefa |
-| status de tarefa inválido (TASK_STATUS_INVALIDO) | status não reconhecido | use pendente/em-andamento/concluida |
-| suposição em aberto (ASM_ABERTA) | suposição aberta numa feature "pronta" | confirme/invalide com o usuário |
-| seção obrigatória ausente (SECAO_AUSENTE) | spec sem seção Suposições/Perguntas | registre-as ou escreva "Nenhuma." |
-| princípio violado (PRINCIPIO_VIOLADO) | quebrou a constituição | conserte o código, não o princípio |
-| verificação não olha nenhum arquivo (GLOB_SEM_ARQUIVOS) | glob da constituição não casa nada | corrija o glob |
-| nível de princípio inválido (NIVEL_INVALIDO) | nível desconhecido | use [DEVE]/[RECOMENDADO]/[PODE] |
-| código órfão (ARQUIVO_ORFAO) | código que nenhuma tarefa mapeia | mapeie na tarefa ou questione o código |
-| nome da feature divergente (FEATURE_DIVERGENTE) | `> feature:` difere do diretório | alinhe os dois |
-| prova fraca (PROVA_FRACA) | prova só por exit code global | prefira reporter tap/vitest-json/jest-json |
-| código de rastreio curto/duplicado (ID_CURTO / ID_DUPLICADO) | fora da gramática / repetido | use 3+ dígitos, códigos únicos |
+| acceptance criterion without a test (AC_NO_TEST) | requirement without proof | write the test with `@spec:AC-xxx` in the title |
+| acceptance criterion without proof (AC_NO_PROOF) | test exists, never passed (or was SKIPPED) | run `verify`; skip is not proof |
+| orphan test (TEST_ORPHAN) | test points to a criterion that vanished (drift!) | the spec changed — update the test |
+| broken reference (REF_BROKEN) | task cites a nonexistent story/criterion | fix the reference |
+| task done without proof (TASK_DONE_NO_PROOF) | task [done] without a proven criterion | verify or reopen the task |
+| invalid task status (TASK_STATUS_INVALID) | unrecognized status | use pending/in-progress/done |
+| open assumption (ASM_OPEN) | open assumption in a "ready" feature | confirm/invalidate with the user |
+| missing required section (SECTION_MISSING) | spec without an Assumptions/Questions section | record them or write "None." |
+| violated principle (PRINCIPLE_VIOLATED) | broke the constitution | fix the code, not the principle |
+| verification looks at no files (GLOB_NO_FILES) | constitution glob matches nothing | fix the glob |
+| invalid principle level (LEVEL_INVALID) | unrecognized level | use [MUST]/[RECOMMENDED]/[MAY] |
+| orphan code (FILE_ORPHAN) | code no task maps to | map it in a task or question the code |
+| divergent feature name (FEATURE_MISMATCH) | `> feature:` differs from the directory | align the two |
+| weak proof (PROOF_WEAK) | proof only via global exit code | prefer the tap/vitest-json/jest-json reporter |
+| short/duplicate tracking code (ID_SHORT / ID_DUPLICATE) | outside the grammar / repeated | use 3+ digits, unique codes |
 
-Também: história sem critério (`US_SEM_AC`), critério incompleto
-(`AC_INCOMPLETO`), critério sem tarefa (`AC_SEM_TASK`), pergunta em aberto
-(`Q_ABERTA`), princípio sem verificação (`PRINCIPIO_SEM_VERIFICACAO`), prova
-desatualizada (`VERIFY_OBSOLETO`), verificação malformada
-(`VERIFICACAO_MALFORMADA`, inclui regex que excede o tempo limite), arquivo
-não existe (`ARQUIVO_INEXISTENTE`), status inválido (`STATUS_INVALIDO`),
-especificação sem história (`SPEC_SEM_US`), critério fora de história
-(`AC_FORA_DE_US`).
+Also: story without a criterion (`US_NO_AC`), incomplete criterion
+(`AC_INCOMPLETE`), criterion without a task (`AC_NO_TASK`), open question
+(`Q_OPEN`), principle without a check (`PRINCIPLE_NO_CHECK`), stale proof
+(`VERIFY_STALE`), malformed check (`CHECK_MALFORMED`, includes a regex
+that exceeds the time limit), file doesn't exist (`FILE_MISSING`),
+invalid status (`STATUS_INVALID`), spec without a story (`SPEC_NO_US`),
+criterion outside a story (`AC_OUTSIDE_US`).
 
-## Perguntas que o motor responde por você
+## Questions the engine answers for you
 
-- **"Qual requisito não tem teste?"** → `onp-spec audit` → critério de aceite
-  sem teste (`AC_SEM_TESTE`).
-- **"Que teste não mapeia pra requisito?"** → teste órfão (`TESTE_ORFAO`).
-- **"Que código não atende requisito nenhum?"** → código órfão
-  (`ARQUIVO_ORFAO`).
-- **"O que estamos assumindo?"** → `onp-spec assumptions`.
-- **"O que dá pra fazer em paralelo?"** → `onp-spec plano <feature>` — e
-  QUAIS tarefas paralelizar é escolha do usuário, via pergunta.
-- **"O que está rolando agora?"** → `onp-spec resumo <feature> --tabela` (a
-  tabela de andamento) + `onp-spec resumo <feature>` (o texto) — e é você
-  quem grava o resumo a cada ~1 min (`--gravar --origem ia --texto "..."`)
-  e posta tabela e texto no chat.
-- **"Onde estamos?"** → `onp-spec status`.
+- **"Which requirement has no test?"** → `onp-spec audit` → acceptance
+  criterion without a test (`AC_NO_TEST`).
+- **"Which test doesn't map to a requirement?"** → orphan test
+  (`TEST_ORPHAN`).
+- **"Which code doesn't satisfy any requirement?"** → orphan code
+  (`FILE_ORPHAN`).
+- **"What are we assuming?"** → `onp-spec assumptions`.
+- **"What can be done in parallel?"** → `onp-spec plan <feature>` — and
+  WHICH tasks to parallelize is the user's choice, via a question.
+- **"What's happening right now?"** → `onp-spec summary <feature>
+  --table` (the progress table) + `onp-spec summary <feature>` (the
+  text) — and you're the one recording the summary every ~1 min
+  (`--save --source ai --text "..."`) and posting the table and text in
+  the chat.
+- **"Where do things stand?"** → `onp-spec status`.
 
-## Carregamento de contexto
+## Context loading
 
-Carregue referências sob demanda (na fase que precisa delas), nunca todas de
-uma vez. Nunca carregue especificações de duas features ao mesmo tempo.
-Constituição: [constituicao.md](references/constituicao.md).
+Load references on demand (in the phase that needs them), never all at
+once. Never load specs from two features at the same time. Constitution:
+[constitution.md](references/constitution.md).
 
-## Regra de ouro
+## Golden rule
 
-Se você está prestes a dizer "pronto", rode `onp-spec audit --ci` e cole a
-saída. Se não saiu 0, não está pronto. Aqui, "pronto" é uma coisa que a máquina
-verifica — não uma frase sua.
+If you're about to say "done", run `onp-spec audit --ci` and paste the
+output. If it didn't exit 0, it's not done. Here, "done" is something the
+machine verifies — not something you say.

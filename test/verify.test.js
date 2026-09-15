@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTap, parseJsonReport, resultsByTag, extractTags } from '../src/core/verify.js';
+import path from 'node:path';
+import {
+  parseTap,
+  parseJsonReport,
+  resultsByTag,
+  extractTags,
+  resolvePathWithin,
+  validateTestCommand,
+} from '../src/core/verify.js';
 
 test('parseTap lê ok/not ok com títulos', () => {
   const tap = `TAP version 13
@@ -53,4 +61,18 @@ test('resultsByTag: todos passando dá pass', () => {
   ]);
   assert.equal(acResults['AC-001'].status, 'pass');
   assert.equal(principleResults['P-002'].status, 'pass');
+});
+
+test('resolvePathWithin rejeita traversal, caminho absoluto e byte nulo', () => {
+  const root = '/project';
+  assert.equal(resolvePathWithin(root, '.spec/report.json', 'reporterOutputFile'), path.resolve(root, '.spec/report.json'));
+  assert.throws(() => resolvePathWithin(root, '../secret.json', 'reporterOutputFile'), /must stay within/);
+  assert.throws(() => resolvePathWithin(root, '/secret.json', 'reporterOutputFile'), /must stay within/);
+  assert.throws(() => resolvePathWithin(root, 'report\0.json', 'reporterOutputFile'), /null bytes/);
+});
+
+test('validateTestCommand aceita executável conhecido e rejeita injection e traversal', () => {
+  assert.equal(validateTestCommand('node', '/project'), 'node');
+  assert.throws(() => validateTestCommand('node; rm -rf /', '/project'), /unsafe characters/);
+  assert.throws(() => validateTestCommand('../outside/run-tests', '/project'), /must stay within/);
 });

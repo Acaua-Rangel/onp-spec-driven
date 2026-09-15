@@ -1,49 +1,49 @@
-// Configuração do projeto — onpspec.config.json na raiz (opcional).
-// Tudo tem default sensato: `npx onp-spec audit` funciona sem config.
+// Project configuration — onpspec.config.json at the root (optional).
+// Everything has a sensible default: `npx onp-spec audit` works with no config.
 
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
-import { LICOES_DEFAULTS } from './core/licoes.js';
+import { LESSONS_DEFAULTS } from './core/lessons.js';
 
 export const DEFAULT_CONFIG = {
   specDir: '.spec',
-  // onde procurar tags @spec/@principle
+  // where to look for @spec/@principle tags
   testGlobs: ['test/**', 'tests/**', 'src/**/*.test.*', 'src/**/*.spec.*', '__tests__/**'],
-  // arquivos de implementação que precisam estar mapeados em alguma task
+  // implementation files that must be mapped to some task
   srcGlobs: ['src/**'],
   ignoreGlobs: ['node_modules/**', '.git/**', 'dist/**', 'build/**', 'coverage/**', '.spec/**'],
-  // comando que roda os testes; usado por `onp-spec verify`
+  // command that runs the tests; used by `onp-spec verify`
   testCommand: null,
-  // como interpretar a saída: tap | vitest-json | jest-json | exitcode
+  // how to interpret the output: tap | vitest-json | jest-json | exitcode
   reporter: 'tap',
-  // arquivo de saída para reporters json (vitest-json/jest-json)
+  // output file for json reporters (vitest-json/jest-json)
   reporterOutputFile: null,
-  // camada de lições: limiares de promoção/quarentena, janela e tetos
-  licoes: { ...LICOES_DEFAULTS },
-  // plano de execução (onp-spec plano): paralelismo e defaults do executor
-  paralelo: {
-    // máximo de faixas rodando ao mesmo tempo numa onda
-    maxParalelas: 3,
-    // modelo default por tarefa (tasks.md pode sobrescrever com `- Modelo:`;
-    // claude-sonnet-5 também é slug válido no Cursor — no codex vira
-    // gpt-5.6-terra, que é da família dele)
+  // lessons layer: promotion/quarantine thresholds, window and caps
+  lessons: { ...LESSONS_DEFAULTS },
+  // execution plan (onp-spec plan): parallelism and executor defaults
+  parallel: {
+    // maximum number of lanes running at the same time in a wave
+    maxParallel: 3,
+    // default model per task (tasks.md can override with `- Model:`;
+    // claude-sonnet-5 is also a valid slug in Cursor — in codex it becomes
+    // gpt-5.6-terra, which belongs to its family)
     model: 'claude-sonnet-5',
-    // esforço default: baixo|medio|alto|xalto|max (ou low|medium|high|xhigh|max)
-    esforco: 'medium',
-    // modo de permissão do claude headless; para rodar 100% sem prompts o
-    // usuário pode trocar para bypassPermissions (decisão explícita dele)
+    // default effort: low|medium|high|xhigh|max
+    effort: 'medium',
+    // permission mode of headless claude; to run fully prompt-free the user
+    // can switch to bypassPermissions (their explicit choice)
     permissionMode: 'acceptEdits',
-    // override da lista --allowedTools (null = derivada do testCommand + git)
+    // override of the --allowedTools list (null = derived from testCommand + git)
     allowedTools: null,
-    // sandbox do codex headless (`codex exec --sandbox`); para liberar rede
-    // e caminhos fora do workspace o usuário pode trocar para
-    // danger-full-access (decisão explícita dele)
+    // sandbox of headless codex (`codex exec --sandbox`); to allow network
+    // and paths outside the workspace the user can switch to
+    // danger-full-access (their explicit choice)
     sandbox: 'workspace-write',
-    // modelo que escreve o "resumo geral de andamento" a cada minuto
-    // (default do claude; no codex o plano usa gpt-5.6-luna se este valor
-    // continuar sendo um modelo claude-*; no cursor vira composer enquanto
-    // este valor for o default — claude-haiku-4-5 não é slug do Cursor)
-    resumoModel: 'claude-haiku-4-5',
+    // model that writes the "overall progress summary" every minute
+    // (claude default; in codex the plan uses gpt-5.6-luna if this value
+    // remains a claude-* model; in cursor it becomes composer while this
+    // value is the default — claude-haiku-4-5 is not a Cursor slug)
+    summaryModel: 'claude-haiku-4-5',
   },
 };
 
@@ -56,13 +56,13 @@ export function loadConfig(rootDir) {
   try {
     raw = JSON.parse(readFileSync(configPath, 'utf-8'));
   } catch (err) {
-    throw new Error(`onpspec.config.json inválido: ${err.message}`);
+    throw new Error(`invalid onpspec.config.json: ${err.message}`);
   }
   return {
     ...DEFAULT_CONFIG,
     ...raw,
-    licoes: { ...DEFAULT_CONFIG.licoes, ...(raw.licoes || {}) },
-    paralelo: { ...DEFAULT_CONFIG.paralelo, ...(raw.paralelo || {}) },
+    lessons: { ...DEFAULT_CONFIG.lessons, ...(raw.lessons || {}) },
+    parallel: { ...DEFAULT_CONFIG.parallel, ...(raw.parallel || {}) },
     rootDir,
     configPath,
   };

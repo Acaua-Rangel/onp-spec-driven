@@ -1,11 +1,11 @@
-// Scanner de anotações em arquivos de teste e código.
+// Scanner for annotations in test and code files.
 //
-// Convenção universal (funciona em qualquer framework/linguagem):
-//   - tag no TÍTULO do teste ou em comentário: @spec:AC-001
-//   - tag de princípio: @principle:P-001
+// Universal convention (works in any framework/language):
+//   - tag in the test TITLE or in a comment: @spec:AC-001
+//   - principle tag: @principle:P-001
 //
-// O scanner varre os arquivos casando os globs configurados e devolve
-// todas as ocorrências com arquivo + linha.
+// The scanner walks the files matching the configured globs and returns
+// every occurrence with file + line.
 
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { spawnSync } from 'child_process';
@@ -21,12 +21,12 @@ const TEXT_EXTENSIONS = new Set([
   '.md', '.txt', '.sql', '.sh', '.vue', '.svelte',
 ]);
 
-// Porção estática de um glob — tudo antes do primeiro `*`/`?`, cortada no
-// último `/`. 'src/**' -> 'src' | 'src/**/*.test.*' -> 'src' | '*.md' -> ''
-// | '../outro-repo/src/**' -> '../outro-repo/src'. É a partir daqui que o
-// walk físico começa — permite que o walk saia de baixo de rootDir quando o
-// glob usa `../` (globs não fazem I/O sozinhos: sem isso, nenhum arquivo
-// fora de rootDir seria visitado, e `../` nunca casaria com nada).
+// Static portion of a glob — everything before the first `*`/`?`, cut at the
+// last `/`. 'src/**' -> 'src' | 'src/**/*.test.*' -> 'src' | '*.md' -> ''
+// | '../other-repo/src/**' -> '../other-repo/src'. This is where the physical
+// walk starts — it lets the walk leave rootDir when the glob uses `../`
+// (globs do no I/O on their own: without this, no file outside rootDir would
+// be visited, and `../` would never match anything).
 function staticDirOf(glob) {
   const wildcardIdx = glob.search(/[*?]/);
   const prefix = wildcardIdx === -1 ? glob : glob.slice(0, wildcardIdx);
@@ -48,8 +48,8 @@ export function walkFiles(rootDir, { includeGlobs, ignoreGlobs }) {
     }
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      // path.relative devolve o `../` de volta quando `full` cai fora de
-      // rootDir — é assim que um walk-root externo casa com um glob `../`.
+      // path.relative gives the `../` back when `full` falls outside rootDir
+      // — this is how an external walk-root matches a `../` glob.
       const rel = path.relative(rootDir, full).split(path.sep).join('/');
       if (anyGlobMatch(rel, ignore)) continue;
       if (entry.isDirectory()) {
@@ -94,12 +94,12 @@ export function scanAnnotations(rootDir, files) {
   return { specTags, principleTags };
 }
 
-// Procura ocorrências de um padrão regex em arquivos que casam um glob.
-// Usado pelas verificações (proibido/obrigatório) da constituição.
+// Searches for occurrences of a regex pattern in files matching a glob.
+// Used by the constitution checks (forbidden/required).
 //
-// Roda em SUBPROCESSO com timeout: uma regex patológica vinda da constituição
-// (ex.: `(a+)+$`) causaria catastrophic backtracking e travaria o gate para
-// sempre — aqui ela é morta e vira um achado, não um DoS.
+// Runs in a SUBPROCESS with a timeout: a pathological regex coming from the
+// constitution (e.g. `(a+)+$`) would cause catastrophic backtracking and
+// hang the gate forever — here it is killed and becomes a finding, not a DoS.
 const GREP_TIMEOUT_MS = 5000;
 
 const GREP_WORKER = `
@@ -111,7 +111,7 @@ process.stdin.on('end', () => {
   const path = require('path');
   let re;
   try { re = new RegExp(pattern); } catch (err) {
-    console.log(JSON.stringify({ error: 'regex inválida: ' + pattern + ' (' + err.message + ')', hits: [] }));
+    console.log(JSON.stringify({ error: 'invalid regex: ' + pattern + ' (' + err.message + ')', hits: [] }));
     return;
   }
   const hits = [];
@@ -129,12 +129,12 @@ process.stdin.on('end', () => {
 
 export function grepPattern(rootDir, pattern, glob, ignoreGlobs) {
   const files = walkFiles(rootDir, { includeGlobs: [glob], ignoreGlobs });
-  // regex inválida é acusada SEMPRE, mesmo com glob vazio (compilar é barato
-  // e seguro; só a execução pode ser patológica)
+  // an invalid regex is ALWAYS flagged, even with an empty glob (compiling is
+  // cheap and safe; only execution can be pathological)
   try {
     new RegExp(pattern);
   } catch (err) {
-    return { error: `regex inválida: ${pattern} (${err.message})`, hits: [], files };
+    return { error: `invalid regex: ${pattern} (${err.message})`, hits: [], files };
   }
   if (files.length === 0) return { error: null, hits: [], files };
 
@@ -147,7 +147,7 @@ export function grepPattern(rootDir, pattern, glob, ignoreGlobs) {
 
   if (proc.signal || proc.status === null) {
     return {
-      error: `regex \`${pattern}\` excedeu ${GREP_TIMEOUT_MS / 1000}s (possível catastrophic backtracking) — simplifique o padrão`,
+      error: `regex \`${pattern}\` exceeded ${GREP_TIMEOUT_MS / 1000}s (possible catastrophic backtracking) — simplify the pattern`,
       hits: [],
       files,
     };
@@ -156,6 +156,6 @@ export function grepPattern(rootDir, pattern, glob, ignoreGlobs) {
     const out = JSON.parse(proc.stdout);
     return { error: out.error, hits: out.hits, files };
   } catch {
-    return { error: `falha ao executar a verificação regex \`${pattern}\``, hits: [], files };
+    return { error: `failed to run the regex verification \`${pattern}\``, hits: [], files };
   }
 }

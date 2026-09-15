@@ -1,205 +1,205 @@
-// Cenários de benchmark — specs REAIS do domínio ONP (curso de programação do
-// Vitor Manoel) com defeitos semeados, cada um representando uma falha que
-// realmente assola projetos spec-driven.
+// Benchmark scenarios — REAL specs from the ONP domain (Vitor Manoel's
+// programming course) with seeded defects, each representing a failure that
+// really plagues spec-driven projects.
 //
-// Cada cenário descreve a MESMA feature de forma neutra; os adaptadores
-// materializam no formato de cada ferramenta. A coluna `defectClass` é o eixo
-// da comparação: quantas ferramentas detectam mecanicamente cada classe.
-
-// Classes de defeito (o "o que dá errado de verdade")
+// Each scenario describes the SAME feature in a neutral way; the adapters
+// materialize it in each tool's format. The `defectClass` column is the axis
+// of comparison: how many tools mechanically detect each class.
+ 
+// Defect classes (the "what actually goes wrong")
 export const DEFECT_CLASSES = {
-  BASELINE_LIMPO: 'spec correta — nenhuma ferramenta pode acusar falso positivo',
-  REQ_SEM_TESTE: 'requisito sem nenhum teste que o prove (drift #1 do SDD)',
-  TESTE_ORFAO: 'requisito renomeado; teste ficou pra trás apontando pro ID antigo',
-  REQ_INCOMPLETO: 'requisito sem comportamento observável (sem Dado/Quando/Então)',
-  PRONTO_PREMATURO: 'task marcada concluída sem prova de teste passando',
-  SUPOSICAO_SILENCIOSA: 'decisão de produto assumida sem registro explícito',
-  PRIVACIDADE_VIOLADA: 'nota de aluno exposta / PII em log — viola a constituição',
-  CODIGO_ORFAO: 'arquivo de código que não atende requisito nenhum',
-  REF_QUEBRADA: 'task referencia requisito que não existe',
-  ID_DUPLICADO: 'dois requisitos com o mesmo identificador',
+  CLEAN_BASELINE: 'correct spec — no tool should raise a false positive',
+  REQ_NO_TEST: 'requirement with no test that proves it (SDD drift #1)',
+  ORPHAN_TEST: 'requirement renamed; test was left behind pointing to the old ID',
+  INCOMPLETE_REQ: 'requirement with no observable behavior (no Given/When/Then)',
+  PREMATURE_DONE: 'task marked done with no proof of a passing test',
+  SILENT_ASSUMPTION: 'product decision assumed with no explicit record',
+  PRIVACY_VIOLATED: "student grade exposed / PII in a log — violates the constitution",
+  ORPHAN_CODE: 'code file that serves no requirement at all',
+  BROKEN_REF: 'task references a requirement that doesn\'t exist',
+  DUPLICATE_ID: 'two requirements with the same identifier',
 };
 
-// Feature real 1: inscrição na turma (turma de Agosto do curso ONP)
-const inscricaoBase = {
-  feature: 'inscricao-turma',
-  title: 'Inscrição na turma',
+// Real feature 1: class enrollment (ONP course's August cohort)
+const enrollmentBase = {
+  feature: 'class-enrollment',
+  title: 'Class enrollment',
   purpose:
-    'Permitir que um novo aluno se inscreva numa turma aberta, respeitando o limite de vagas e registrando o consentimento do responsável quando menor de idade.',
+    'Let a new student enroll in an open class, respecting the seat limit and recording the guardian\'s consent when the student is a minor.',
   stories: [
     {
       id: 'US-001',
-      title: 'Aluno se inscreve em turma aberta',
-      as: 'visitante interessado',
-      want: 'me inscrever numa turma com vagas',
-      so: 'eu garanta minha vaga no curso',
+      title: 'Student enrolls in an open class',
+      as: 'interested visitor',
+      want: 'enroll in a class with open seats',
+      so: 'I secure my spot in the course',
       acs: [
         {
           id: 'AC-001',
-          title: 'Inscrição em turma com vaga',
-          given: 'uma turma aberta com vagas disponíveis',
-          when: 'o visitante envia nome, e-mail e telefone válidos',
-          then: 'a inscrição é registrada e a vaga é decrementada',
+          title: 'Enrollment in a class with a seat available',
+          given: 'an open class with available seats',
+          when: 'the visitor submits a valid name, email and phone number',
+          then: 'the enrollment is recorded and the seat count is decremented',
         },
         {
           id: 'AC-002',
-          title: 'Turma lotada recusa inscrição',
-          given: 'uma turma sem vagas',
-          when: 'o visitante tenta se inscrever',
-          then: 'a inscrição é recusada com mensagem de turma lotada',
+          title: 'Full class refuses enrollment',
+          given: 'a class with no seats left',
+          when: 'the visitor tries to enroll',
+          then: 'the enrollment is refused with a "class full" message',
         },
       ],
     },
   ],
   assumptions: [
-    { id: 'ASM-001', text: 'E-mail é o identificador único do aluno', status: 'confirmada', resolution: 'decidido com o produto' },
+    { id: 'ASM-001', text: 'Email is the student\'s unique identifier', status: 'confirmed', resolution: 'decided with the product owner' },
   ],
   questions: [],
   constitution: false,
 };
 
-// Feature real 2: notas do aluno (sensível a privacidade — LGPD)
-const notasBase = {
-  feature: 'notas-aluno',
-  title: 'Notas do aluno',
+// Real feature 2: student grades (privacy-sensitive — LGPD)
+const gradesBase = {
+  feature: 'student-grades',
+  title: 'Student grades',
   purpose:
-    'Mostrar ao aluno as suas próprias notas e correções, registrando quem acessou cada nota, sem jamais expor a nota de um aluno a outro.',
+    'Show the student their own grades and feedback, recording who accessed each grade, without ever exposing one student\'s grade to another.',
   stories: [
     {
       id: 'US-010',
-      title: 'Aluno consulta suas notas',
-      as: 'aluno autenticado',
-      want: 'ver minhas notas e correções',
-      so: 'eu acompanhe meu progresso',
+      title: 'Student views their own grades',
+      as: 'authenticated student',
+      want: 'see my grades and feedback',
+      so: 'I can track my progress',
       acs: [
         {
           id: 'AC-010',
-          title: 'Aluno vê só as próprias notas',
-          given: 'um aluno autenticado com notas registradas',
-          when: 'ele abre a página de notas',
-          then: 'a resposta contém apenas as notas do próprio aluno',
+          title: 'Student sees only their own grades',
+          given: 'an authenticated student with recorded grades',
+          when: 'they open the grades page',
+          then: 'the response contains only that student\'s own grades',
         },
         {
           id: 'AC-011',
-          title: 'Acesso a nota é registrado',
-          given: 'um aluno autenticado abrindo suas notas',
-          when: 'a nota é lida',
-          then: 'um registro de auditoria é gravado com quem, o quê e quando',
+          title: 'Grade access is logged',
+          given: 'an authenticated student opening their grades',
+          when: 'the grade is read',
+          then: 'an audit record is written with who, what and when',
         },
       ],
     },
   ],
   assumptions: [
-    { id: 'ASM-010', text: 'Professor pode ver notas de toda a turma dele', status: 'confirmada', resolution: 'regra pedagógica' },
+    { id: 'ASM-010', text: 'A teacher can see the grades of their whole class', status: 'confirmed', resolution: 'pedagogical rule' },
   ],
   questions: [],
-  constitution: true, // usa preset LGPD/educação
+  constitution: true, // uses the LGPD/education preset
 };
 
-// Helper: clona uma feature base para poder semear defeito sem mutar a original
+// Helper: clones a base feature so a defect can be seeded without mutating the original
 function clone(base) {
   return JSON.parse(JSON.stringify(base));
 }
 
-// Constrói os cenários aplicando um defeito sobre uma feature base.
+// Builds the scenarios by applying a defect on top of a base feature.
 export const SCENARIOS = [
   {
     id: 'S00-baseline',
-    defectClass: 'BASELINE_LIMPO',
-    feature: clone(inscricaoBase),
-    seed: () => {}, // nada — spec correta
+    defectClass: 'CLEAN_BASELINE',
+    feature: clone(enrollmentBase),
+    seed: () => {}, // nothing — correct spec
   },
   {
-    id: 'S01-req-sem-teste',
-    defectClass: 'REQ_SEM_TESTE',
-    feature: clone(inscricaoBase),
+    id: 'S01-req-no-test',
+    defectClass: 'REQ_NO_TEST',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // AC-002 não terá teste anotado (o adaptador só gera teste para AC-001)
-      f.__semTeste = ['AC-002'];
+      // AC-002 will have no annotated test (the adapter only generates a test for AC-001)
+      f.__noTest = ['AC-002'];
     },
   },
   {
-    id: 'S02-teste-orfao',
-    defectClass: 'TESTE_ORFAO',
-    feature: clone(inscricaoBase),
+    id: 'S02-orphan-test',
+    defectClass: 'ORPHAN_TEST',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // renomeia AC-002 → AC-050 na spec, mas o teste continua com @spec:AC-002
+      // renames AC-002 → AC-050 in the spec, but the test still uses @spec:AC-002
       f.stories[0].acs[1].id = 'AC-050';
-      f.__testeOrfao = { specId: 'AC-050', testId: 'AC-002' };
+      f.__orphanTest = { specId: 'AC-050', testId: 'AC-002' };
     },
   },
   {
-    id: 'S03-req-incompleto',
-    defectClass: 'REQ_INCOMPLETO',
-    feature: clone(inscricaoBase),
+    id: 'S03-incomplete-req',
+    defectClass: 'INCOMPLETE_REQ',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // AC-002 perde o Então (sem comportamento observável)
+      // AC-002 loses its Then (no observable behavior)
       f.stories[0].acs[1].then = '';
-      f.__incompleto = ['AC-002'];
+      f.__incomplete = ['AC-002'];
     },
   },
   {
-    id: 'S04-pronto-prematuro',
-    defectClass: 'PRONTO_PREMATURO',
-    feature: clone(inscricaoBase),
+    id: 'S04-premature-done',
+    defectClass: 'PREMATURE_DONE',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // task concluída, mas o teste do AC falha (sem prova PASS)
-      f.__taskConcluidaComFalha = ['AC-001'];
+      // task marked done, but the AC's test fails (no PASS proof)
+      f.__taskDoneWithFailure = ['AC-001'];
     },
   },
   {
-    id: 'S05-suposicao-silenciosa',
-    defectClass: 'SUPOSICAO_SILENCIOSA',
-    feature: clone(inscricaoBase),
+    id: 'S05-silent-assumption',
+    defectClass: 'SILENT_ASSUMPTION',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // feature "implementada" mas com uma suposição aberta (não resolvida)
-      f.status = 'implementada';
+      // feature "implemented" but with an open (unresolved) assumption
+      f.status = 'implemented';
       f.assumptions.push({
         id: 'ASM-002',
-        text: 'Inscrição não pode ser cancelada pelo próprio aluno',
-        status: 'aberta',
+        text: 'The student cannot cancel their own enrollment',
+        status: 'open',
         resolution: '—',
       });
     },
   },
   {
-    id: 'S06-privacidade-violada',
-    defectClass: 'PRIVACIDADE_VIOLADA',
-    feature: clone(notasBase),
+    id: 'S06-privacy-violated',
+    defectClass: 'PRIVACY_VIOLATED',
+    feature: clone(gradesBase),
     seed: (f) => {
-      // vaza nota em log — viola P-004 da constituição LGPD
-      f.__vazamento = "console.log('nota do aluno', nota);";
+      // leaks a grade into a log — violates P-004 of the LGPD constitution
+      f.__leak = "console.log('student grade', grade);";
     },
   },
   {
-    id: 'S07-codigo-orfao',
-    defectClass: 'CODIGO_ORFAO',
-    feature: clone(inscricaoBase),
+    id: 'S07-orphan-code',
+    defectClass: 'ORPHAN_CODE',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // um arquivo de código que nenhuma task mapeia
-      f.__codigoOrfao = 'src/rastreador-secreto.js';
+      // a code file that no task maps
+      f.__orphanCode = 'src/secret-tracker.js';
     },
   },
   {
-    id: 'S08-ref-quebrada',
-    defectClass: 'REF_QUEBRADA',
-    feature: clone(inscricaoBase),
+    id: 'S08-broken-ref',
+    defectClass: 'BROKEN_REF',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // task referencia AC-999 inexistente
-      f.__refQuebrada = 'AC-999';
+      // task references a nonexistent AC-999
+      f.__brokenRef = 'AC-999';
     },
   },
   {
-    id: 'S09-id-duplicado',
-    defectClass: 'ID_DUPLICADO',
-    feature: clone(inscricaoBase),
+    id: 'S09-duplicate-id',
+    defectClass: 'DUPLICATE_ID',
+    feature: clone(enrollmentBase),
     seed: (f) => {
-      // duplica o ID AC-001 em dois critérios
+      // duplicates the ID AC-001 across two criteria
       f.stories[0].acs[1].id = 'AC-001';
-      f.__idDuplicado = 'AC-001';
+      f.__duplicateId = 'AC-001';
     },
   },
 ];
 
-// Aplica os seeds uma vez.
+// Applies the seeds once.
 for (const s of SCENARIOS) s.seed(s.feature);

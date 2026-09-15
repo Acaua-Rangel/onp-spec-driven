@@ -4,7 +4,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Spec-anchored development: specs auditáveis contra o código, DoD executável, suposições explícitas e constituição verificável. Zero dependências.",
+  "description": "Spec-anchored development: specs auditable against the code, executable DoD, explicit assumptions and a verifiable constitution. Zero dependencies.",
   "type": "module",
   "bin": {
     "onp-spec": "bin/onp-spec.js"
@@ -14,7 +14,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test",
+    "coverage": "node --experimental-test-coverage --test-coverage-include=\"src/**/*.js\" --test-coverage-include=\"bin/onp-spec.js\" --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"examples/**\" --test-coverage-exclude=\"skills/**\" --test",
     "bench": "node benchmark/run.js",
     "prepublishOnly": "npm test"
   },
@@ -30,12 +31,13 @@
     "spec-driven",
     "spec-anchored",
     "sdd",
-    "rastreabilidade",
+    "traceability",
     "lgpd",
     "ai-coding",
     "claude-code",
     "codex",
-    "cursor"
+    "cursor",
+    "copilot"
   ],
   "author": "Vitor Manoel — O Novo Programador",
   "license": "MIT"

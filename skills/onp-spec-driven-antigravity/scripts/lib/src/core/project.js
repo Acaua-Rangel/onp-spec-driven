@@ -1,5 +1,5 @@
-// Carrega o estado completo do projeto: specs de todas as features,
-// tasks, constituição, anotações nos testes/código e resultados de verify.
+// Loads the full project state: specs of all features, tasks, constitution,
+// annotations in tests/code and verify results.
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'fs';
 import path from 'path';
@@ -25,16 +25,16 @@ export function loadProject(config) {
 
   if (!existsSync(specRoot)) {
     project.errors.push(
-      `diretório ${specDir}/ não encontrado — rode \`onp-spec init\` primeiro`
+      `directory ${specDir}/ not found — run \`onp-spec init\` first`
     );
     return project;
   }
 
-  // constituição
-  const constitutionPath = path.join(specRoot, 'constituicao.md');
+  // constitution
+  const constitutionPath = path.join(specRoot, 'constitution.md');
   if (existsSync(constitutionPath)) {
     project.constitution = parseConstitution(readFileSync(constitutionPath, 'utf-8'), {
-      file: path.join(specDir, 'constituicao.md'),
+      file: path.join(specDir, 'constitution.md'),
     });
   }
 
@@ -64,7 +64,7 @@ export function loadProject(config) {
     }
   }
 
-  // verificações (resultado de `onp-spec verify`)
+  // verifications (result of `onp-spec verify`)
   const verificationDir = path.join(specRoot, 'verification');
   if (existsSync(verificationDir)) {
     for (const entry of readdirSync(verificationDir)) {
@@ -74,12 +74,12 @@ export function loadProject(config) {
           readFileSync(path.join(verificationDir, entry), 'utf-8')
         );
       } catch {
-        project.errors.push(`verification/${entry} corrompido — rode verify de novo`);
+        project.errors.push(`verification/${entry} corrupted — run verify again`);
       }
     }
   }
 
-  // arquivos de teste e de código
+  // test and source files
   project.testFiles = walkFiles(rootDir, {
     includeGlobs: config.testGlobs,
     ignoreGlobs: config.ignoreGlobs,
@@ -95,7 +95,7 @@ export function loadProject(config) {
   return project;
 }
 
-// Timestamp de modificação mais recente entre os arquivos dados (ms epoch).
+// Most recent modification timestamp among the given files (ms epoch).
 export function latestMtime(rootDir, files) {
   let latest = 0;
   for (const rel of files) {
@@ -103,7 +103,7 @@ export function latestMtime(rootDir, files) {
       const st = statSync(path.join(rootDir, rel));
       if (st.mtimeMs > latest) latest = st.mtimeMs;
     } catch {
-      // arquivo listado mas inexistente — tratado em outro achado
+      // file listed but non-existent — handled by another finding
     }
   }
   return latest;

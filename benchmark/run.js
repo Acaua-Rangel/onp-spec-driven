@@ -1,10 +1,10 @@
-// Harness de benchmark — roda ao vivo o onp-spec-driven e o OpenSpec sobre a
-// MESMA feature real do domínio ONP, com defeitos semeados, e mede quantas
-// classes de defeito cada ferramenta detecta MECANICAMENTE (o que um CI pega
-// sem um humano/LLM no loop). O spec-kit entra pela matriz de capacidade
-// (verificada no código-fonte: não tem validador mecânico de defeitos).
+// Benchmark harness — runs onp-spec-driven and OpenSpec live over the
+// SAME real ONP-domain feature, with seeded defects, and measures how many
+// defect classes each tool detects MECHANICALLY (what a CI catches without
+// a human/LLM in the loop). spec-kit enters through the capability matrix
+// (verified in the source code: it has no mechanical defect validator).
 //
-// uso: OPENSPEC_BIN=/caminho/openspec/bin/openspec.js node benchmark/run.js
+// usage: OPENSPEC_BIN=/path/to/openspec/bin/openspec.js node benchmark/run.js
 
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import path from 'path';
@@ -17,27 +17,27 @@ import { STATIC_TOOLS } from './adapters/capability.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Mapa: classe de defeito → códigos de achado do onp-spec que a comprovam.
+// Map: defect class → onp-spec finding codes that prove it.
 const ONPSPEC_EXPECT = {
-  BASELINE_LIMPO: null, // espera-se NENHUM erro
-  REQ_SEM_TESTE: ['AC_SEM_TESTE'],
-  TESTE_ORFAO: ['TESTE_ORFAO'],
-  REQ_INCOMPLETO: ['AC_INCOMPLETO'],
-  PRONTO_PREMATURO: ['TASK_CONCLUIDA_SEM_PROVA', 'AC_SEM_PROVA'],
-  SUPOSICAO_SILENCIOSA: ['ASM_ABERTA'],
-  PRIVACIDADE_VIOLADA: ['PRINCIPIO_VIOLADO'],
-  CODIGO_ORFAO: ['ARQUIVO_ORFAO'],
-  REF_QUEBRADA: ['REF_QUEBRADA'],
-  ID_DUPLICADO: ['ID_DUPLICADO'],
+  CLEAN_BASELINE: null, // NO error expected
+  REQ_NO_TEST: ['AC_NO_TEST'],
+  ORPHAN_TEST: ['TEST_ORPHAN'],
+  INCOMPLETE_REQ: ['AC_INCOMPLETE'],
+  PREMATURE_DONE: ['TASK_DONE_NO_PROOF', 'AC_NO_PROOF'],
+  SILENT_ASSUMPTION: ['ASM_OPEN'],
+  PRIVACY_VIOLATED: ['PRINCIPLE_VIOLATED'],
+  ORPHAN_CODE: ['FILE_ORPHAN'],
+  BROKEN_REF: ['REF_BROKEN'],
+  DUPLICATE_ID: ['ID_DUPLICATE'],
 };
 
-// OpenSpec detecta apenas defeitos estruturais que cabem no modelo dele.
-// (medido AO VIVO; este mapa é só para checagem de sanidade do resultado.)
+// OpenSpec only detects structural defects that fit its model.
+// (measured LIVE; this map is just for sanity-checking the result.)
 
 function onpspecDetected(scenario, result) {
   const expect = ONPSPEC_EXPECT[scenario.defectClass];
   if (expect === null) {
-    // baseline: detecção "correta" = não acusar erro nenhum
+    // baseline: "correct" detection = raising no error at all
     return result.ok === true;
   }
   return expect.some((code) => result.detectedCodes.includes(code));
@@ -53,10 +53,10 @@ async function main() {
     const onpDet = onpspecDetected(scenario, onp);
 
     const osRes = runOpenSpec(scenario, workDir);
-    // para baseline, "detecção correta" = validar limpo (não falso-positivar)
+    // for baseline, "correct detection" = validating clean (no false positive)
     let osDet;
     if (!osRes.available) osDet = null;
-    else if (scenario.defectClass === 'BASELINE_LIMPO') osDet = osRes.detected === false;
+    else if (scenario.defectClass === 'CLEAN_BASELINE') osDet = osRes.detected === false;
     else osDet = osRes.detected;
 
     rows.push({
@@ -64,7 +64,7 @@ async function main() {
       defectClass: scenario.defectClass,
       onpspec: onpDet,
       openspec: osDet,
-      speckit: scenario.defectClass === 'BASELINE_LIMPO' ? true : STATIC_TOOLS['spec-kit'].detects(),
+      speckit: scenario.defectClass === 'CLEAN_BASELINE' ? true : STATIC_TOOLS['spec-kit'].detects(),
       onpCodes: onp.detectedCodes,
       osOut: osRes.available ? osRes.out?.split('\n').slice(-3).join(' ') : osRes.note,
     });
@@ -73,50 +73,50 @@ async function main() {
   rmSync(workDir, { recursive: true, force: true });
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
-  // ---------- agrega ----------
+  // ---------- aggregate ----------
   const tools = ['onpspec', 'openspec', 'speckit'];
   const labels = {
     onpspec: 'onp-spec-driven',
     openspec: 'OpenSpec',
     speckit: 'spec-kit',
   };
-  // conta apenas cenários de DEFEITO (exclui baseline) para taxa de detecção
-  const defectRows = rows.filter((r) => r.defectClass !== 'BASELINE_LIMPO');
+  // counts only DEFECT scenarios (excludes baseline) for the detection rate
+  const defectRows = rows.filter((r) => r.defectClass !== 'CLEAN_BASELINE');
   const score = {};
   for (const t of tools) {
     const hits = defectRows.filter((r) => r[t] === true).length;
     score[t] = { hits, total: defectRows.length, pct: Math.round((100 * hits) / defectRows.length) };
   }
-  const baseline = rows.find((r) => r.defectClass === 'BASELINE_LIMPO');
+  const baseline = rows.find((r) => r.defectClass === 'CLEAN_BASELINE');
 
-  // ---------- imprime ----------
-  console.log(`\nBenchmark onp-spec-driven — ${SCENARIOS.length} cenários (${elapsed}s)\n`);
-  console.log('Taxa de detecção mecânica de defeitos reais (maior = melhor):');
+  // ---------- print ----------
+  console.log(`\nonp-spec-driven benchmark — ${SCENARIOS.length} scenarios (${elapsed}s)\n`);
+  console.log('Mechanical detection rate for real defects (higher = better):');
   for (const t of tools) {
     console.log(`  ${labels[t].padEnd(18)} ${String(score[t].pct).padStart(3)}%  (${score[t].hits}/${score[t].total})`);
   }
-  console.log('\nBaseline (spec correta) — nenhuma deve falso-positivar:');
+  console.log('\nBaseline (correct spec) — none should false-positive:');
   for (const t of tools) {
     const v = baseline[t];
-    console.log(`  ${labels[t].padEnd(18)} ${v === true ? 'OK (limpo)' : v === null ? 'n/d' : 'FALSO POSITIVO'}`);
+    console.log(`  ${labels[t].padEnd(18)} ${v === true ? 'OK (clean)' : v === null ? 'n/a' : 'FALSE POSITIVE'}`);
   }
 
   // ---------- RESULTS.md ----------
   const md = renderResults({ rows, score, tools, labels, defectRows, baseline, elapsed });
   const outPath = path.join(__dirname, 'RESULTS.md');
   writeFileSync(outPath, md);
-  console.log(`\nrelatório completo: ${path.relative(process.cwd(), outPath)}`);
+  console.log(`\nfull report: ${path.relative(process.cwd(), outPath)}`);
 
-  // ---------- sanidade: onp-spec DEVE pegar tudo ----------
+  // ---------- sanity check: onp-spec MUST catch everything ----------
   const misses = defectRows.filter((r) => r.onpspec !== true);
   if (misses.length) {
-    console.error(`\n⚠ onp-spec-driven não detectou: ${misses.map((m) => m.defectClass).join(', ')}`);
+    console.error(`\n⚠ onp-spec-driven did not detect: ${misses.map((m) => m.defectClass).join(', ')}`);
     process.exitCode = 1;
   } else if (baseline.onpspec !== true) {
-    console.error('\n⚠ onp-spec-driven falso-positivou no baseline');
+    console.error('\n⚠ onp-spec-driven false-positived on the baseline');
     process.exitCode = 1;
   } else {
-    console.log('\n✔ onp-spec-driven: 100% de detecção e baseline limpo');
+    console.log('\n✔ onp-spec-driven: 100% detection and clean baseline');
   }
 }
 
@@ -128,47 +128,47 @@ function mark(v) {
 
 function renderResults({ rows, score, tools, labels, defectRows, baseline, elapsed }) {
   const l = [];
-  l.push('# Resultados do benchmark — onp-spec-driven vs. concorrentes', '');
-  l.push(`> Gerado por \`node benchmark/run.js\` · ${new Date().toISOString().slice(0, 10)} · ${elapsed}s`);
-  l.push(`> OpenSpec: ${OPENSPEC_BIN ? 'executado ao vivo' : 'não disponível neste ambiente (defina OPENSPEC_BIN)'}`, '');
+  l.push('# Benchmark results — onp-spec-driven vs. competitors', '');
+  l.push(`> Generated by \`node benchmark/run.js\` · ${new Date().toISOString().slice(0, 10)} · ${elapsed}s`);
+  l.push(`> OpenSpec: ${OPENSPEC_BIN ? 'run live' : 'not available in this environment (set OPENSPEC_BIN)'}`, '');
 
-  l.push('## O que se mede', '');
-  l.push('Cada cenário parte de uma **spec real do domínio ONP** (inscrição de turma, notas de aluno) e semeia **um defeito que realmente adoece projetos spec-driven**. Mede-se se cada ferramenta detecta o defeito **mecanicamente** — o que um pipeline de CI pega sozinho, sem humano nem LLM no loop. É essa detecção que faz a spec *continuar verdadeira*.', '');
+  l.push('## What is measured', '');
+  l.push('Each scenario starts from a **real spec from the ONP domain** (class enrollment, student grades) and seeds **a defect that really plagues spec-driven projects**. It measures whether each tool detects the defect **mechanically** — what a CI pipeline catches on its own, without a human or LLM in the loop. That detection is what keeps the spec *true over time*.', '');
 
-  l.push('## Placar (taxa de detecção mecânica)', '');
-  l.push('| Ferramenta | Detecção | Acertos |');
+  l.push('## Scoreboard (mechanical detection rate)', '');
+  l.push('| Tool | Detection | Hits |');
   l.push('|---|---|---|');
   for (const t of tools) {
     l.push(`| ${labels[t]} | **${score[t].pct}%** | ${score[t].hits}/${score[t].total} |`);
   }
   l.push('');
 
-  l.push('## Matriz por classe de defeito', '');
-  l.push('| Cenário | Defeito | onp-spec | OpenSpec | spec-kit |');
+  l.push('## Matrix by defect class', '');
+  l.push('| Scenario | Defect | onp-spec | OpenSpec | spec-kit |');
   l.push('|---|---|:--:|:--:|:--:|');
   for (const r of rows) {
     l.push(`| ${r.scenario} | ${r.defectClass} | ${mark(r.onpspec)} | ${mark(r.openspec)} | ${mark(r.speckit)} |`);
   }
   l.push('');
-  l.push('Legenda: ✅ detectou (ou, no baseline, validou limpo) · ❌ não detectou · — não disponível.', '');
+  l.push('Legend: ✅ detected (or, for the baseline, validated clean) · ❌ not detected · — not available.', '');
 
-  l.push('## Descrição das classes de defeito', '');
+  l.push('## Defect class descriptions', '');
   for (const [k, v] of Object.entries(DEFECT_CLASSES)) l.push(`- **${k}** — ${v}`);
   l.push('');
 
-  l.push('## Evidência (achados do onp-spec por cenário)', '');
-  l.push('| Cenário | Códigos de erro emitidos |');
+  l.push('## Evidence (onp-spec findings per scenario)', '');
+  l.push('| Scenario | Emitted error codes |');
   l.push('|---|---|');
   for (const r of rows) {
-    l.push(`| ${r.scenario} | ${r.onpCodes.length ? r.onpCodes.join(', ') : '_(nenhum — baseline limpo)_'} |`);
+    l.push(`| ${r.scenario} | ${r.onpCodes.length ? r.onpCodes.join(', ') : '_(none — clean baseline)_'} |`);
   }
   l.push('');
 
-  l.push('## Por que os concorrentes ficam para trás', '');
-  l.push('- **OpenSpec** tem um validador estrutural real (exige frase normativa SHALL e ao menos um cenário por requisito), então pega `REQ_INCOMPLETO`. Mas seu modelo não conhece **testes, provas, suposições, privacidade ou código órfão** — logo não há como detectar o drift #1 (requisito sem teste), a vitória prematura, a suposição silenciosa ou a violação de privacidade.');
-  l.push('- **spec-kit** é scaffolding: gera templates ótimos e conduz o agente, mas não roda nenhuma checagem de defeitos — e no template dele os **testes são opcionais**. Detecção mecânica: zero.');
+  l.push('## Why the competitors fall behind', '');
+  l.push('- **OpenSpec** has a real structural validator (it requires a normative SHALL sentence and at least one scenario per requirement), so it catches `REQ_INCOMPLETO`. But its model has no notion of **tests, proof, assumptions, privacy, or orphan code** — so there is no way to detect drift #1 (requirement without a test), premature "done", the silent assumption, or the privacy violation.');
+  l.push('- **spec-kit** is scaffolding: it generates great templates and steers the agent, but runs no defect check at all — and in its template **tests are optional**. Mechanical detection: zero.');
   l.push('');
-  l.push('O onp-spec-driven é o único que trata **prova de teste, suposição e princípio como dados de primeira classe** e os audita mecanicamente — por isso detecta as classes que os outros nem representam.', '');
+  l.push('onp-spec-driven is the only one that treats **test proof, assumptions, and principles as first-class data** and audits them mechanically — that\'s why it detects classes the others don\'t even represent.', '');
 
   return l.join('\n');
 }

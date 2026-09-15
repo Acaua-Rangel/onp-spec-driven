@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 import { ENTRY } from '../tools/build-skill.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SKILLS = ['onp-spec-driven', 'onp-spec-driven-antigravity', 'onp-spec-driven-codex', 'onp-spec-driven-cursor'];
+const SKILLS = ['onp-spec-driven', 'onp-spec-driven-antigravity', 'onp-spec-driven-codex', 'onp-spec-driven-cursor', 'onp-spec-driven-copilot', 'onp-spec-driven-gemini'];
 
 function walk(dir, base = dir) {
   const out = [];
@@ -70,14 +70,20 @@ test('SKILL.md: marcador agent correto e versões alinhadas', () => {
   const ag = frontmatter('onp-spec-driven-antigravity');
   const codex = frontmatter('onp-spec-driven-codex');
   const cursor = frontmatter('onp-spec-driven-cursor');
+  const copilot = frontmatter('onp-spec-driven-copilot');
+  const gemini = frontmatter('onp-spec-driven-gemini');
   assert.match(claude, /^\s*agent:\s*claude\s*$/m);
   assert.match(ag, /^\s*agent:\s*antigravity\s*$/m);
   assert.match(codex, /^\s*agent:\s*codex\s*$/m);
   assert.match(cursor, /^\s*agent:\s*cursor\s*$/m);
+  assert.match(copilot, /^\s*agent:\s*copilot\s*$/m);
+  assert.match(gemini, /^\s*agent:\s*gemini\s*$/m);
   const versao = (fm) => fm.match(/^\s*version:\s*(\S+)/m)?.[1];
   assert.equal(versao(claude), versao(ag), 'versões das skills divergem — bump junto');
   assert.equal(versao(claude), versao(codex), 'versões das skills divergem — bump junto');
   assert.equal(versao(claude), versao(cursor), 'versões das skills divergem — bump junto');
+  assert.equal(versao(claude), versao(copilot), 'versões das skills divergem — bump junto');
+  assert.equal(versao(claude), versao(gemini), 'versões das skills divergem — bump junto');
 });
 
 // O Cursor exige que o `name:` do frontmatter seja IGUAL ao nome da pasta
@@ -91,15 +97,16 @@ test('SKILL.md (cursor): name compatível com a pasta de instalação', () => {
   assert.match(frontmatter, /^\s*description:\s*\S/m, 'description é obrigatória para a ativação automática');
 });
 
+
 // As regras anti-fraude do contrato são sagradas: nenhuma skill pode perder
-// "nunca enfraqueça/pule/apague teste" nem a degradação graciosa (PROVA FRACA).
+// "never weaken/skip/delete a test" nem a degradação graciosa (WEAK PROOF).
 test('SKILL.md: contrato e degradação graciosa presentes nas quatro skills', () => {
   for (const skill of SKILLS) {
     const conteudo = readFileSync(path.join(ROOT, 'skills', skill, 'SKILL.md'), 'utf-8');
-    assert.match(conteudo, /Nunca enfraqueça, pule ou apague um teste/, `${skill}: regra 6 do contrato sumiu`);
-    assert.match(conteudo, /skip\/todo\) não é prova/, `${skill}: "skip não é prova" sumiu`);
-    assert.match(conteudo, /PROVA FRACA \(auditoria manual\)/, `${skill}: degradação graciosa sumiu`);
-    assert.match(conteudo, /audit --ci` sai com código 0/, `${skill}: gate do audit sumiu`);
+    assert.match(conteudo, /Never weaken, skip, or delete a test/, `${skill}: regra 6 do contrato sumiu`);
+    assert.match(conteudo, /skip\/todo\) is not proof/, `${skill}: "skip is not proof" sumiu`);
+    assert.match(conteudo, /WEAK PROOF \(manual audit\)/, `${skill}: degradação graciosa sumiu`);
+    assert.match(conteudo, /audit --ci` exits with code\s+0/, `${skill}: gate do audit sumiu`);
   }
 });
 
@@ -108,11 +115,11 @@ test('SKILL.md: contrato e degradação graciosa presentes nas quatro skills', (
 // tokens com modelo forte + esforço alto).
 test('SKILL.md (codex): gate de confirmação de modelos e esforços presente', () => {
   const conteudo = readFileSync(path.join(ROOT, 'skills', 'onp-spec-driven-codex', 'SKILL.md'), 'utf-8');
-  assert.match(conteudo, /MODELO e ESFORÇO são escolha do USUÁRIO — confirme ANTES de\s+executar/);
-  assert.match(conteudo, /Sem essa confirmação,\s+não execute/);
-  assert.match(conteudo, /Nunca\s+aumente modelo\/esforço sem o usuário pedir/);
-  assert.match(conteudo, /--modelo gpt-5\.6-luna --esforco baixo/);
-  assert.match(conteudo, /onp-spec tarefa <feature> <T-xxx> --modelo/);
+  assert.match(conteudo, /MODEL and EFFORT are the USER's choice — confirm BEFORE\s+executing/);
+  assert.match(conteudo, /Without this confirmation,?\s+don't execute/);
+  assert.match(conteudo, /Never increase the\s+model\/effort without the user asking for it/);
+  assert.match(conteudo, /--model\s+gpt-5\.6-luna --effort low/);
+  assert.match(conteudo, /onp-spec task <feature> <T-xxx> --model/);
 });
 
 // No cursor, idem: modelos claude-*/gpt-* são cobrados por uso no plano do
@@ -120,13 +127,13 @@ test('SKILL.md (codex): gate de confirmação de modelos e esforços presente', 
 // ser honesta sobre o esforço (não existe flag no CLI; vai no slug).
 test('SKILL.md (cursor): gate de confirmação de modelos e honestidade do esforço', () => {
   const conteudo = readFileSync(path.join(ROOT, 'skills', 'onp-spec-driven-cursor', 'SKILL.md'), 'utf-8');
-  assert.match(conteudo, /O MODELO de cada tarefa é escolha do USUÁRIO — confirme ANTES de\s+executar/);
-  assert.match(conteudo, /Sem essa confirmação, não execute/);
-  assert.match(conteudo, /Nunca troque um modelo por um\s+mais caro sem o usuário pedir/);
-  assert.match(conteudo, /--modelo composer/);
-  assert.match(conteudo, /onp-spec tarefa <feature> <T-xxx> --modelo/);
+  assert.match(conteudo, /The MODEL for each task is the USER's choice — confirm BEFORE\s+executing/);
+  assert.match(conteudo, /Without this confirmation, don't\s+execute/);
+  assert.match(conteudo, /Never swap in a pricier model\s+without the user asking for it/);
+  assert.match(conteudo, /--model composer/);
+  assert.match(conteudo, /onp-spec task <feature> <T-xxx> --model/);
   // honestidade: o CLI do Cursor não tem flag de esforço — o slug decide
-  assert.match(conteudo, /o CLI do Cursor não tem flag de esforço/);
+  assert.match(conteudo, /the Cursor CLI has no effort\s+flag/);
   assert.match(conteudo, /gpt-5\.6-terra-high/);
   // e o executor depende do --force (sem ele o modo print não escreve)
   assert.match(conteudo, /--force/);
