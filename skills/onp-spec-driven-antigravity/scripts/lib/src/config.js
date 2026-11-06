@@ -14,6 +14,11 @@ export const DEFAULT_CONFIG = {
   ignoreGlobs: ['node_modules/**', '.git/**', 'dist/**', 'build/**', 'coverage/**', '.spec/**'],
   // command that runs the tests; used by `onp-spec verify`
   testCommand: null,
+  // verify runs only the test files that carry the feature's @spec tags when
+  // the runner accepts file paths (node --test, vitest, jest, mocha, pytest,
+  // tap). "auto" = do it; false = always run the full suite. A `{files}`
+  // token inside testCommand overrides this and marks where the paths go.
+  testFileArgs: 'auto',
   // how to interpret the output: tap | vitest-json | jest-json | exitcode
   reporter: 'tap',
   // output file for json reporters (vitest-json/jest-json)

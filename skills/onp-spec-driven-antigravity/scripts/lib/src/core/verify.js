@@ -98,7 +98,7 @@ export function gitRev(rootDir) {
   }
 }
 
-// ---------- execution ----------
+// ---------- command parsing ----------
 
 // Splits a command line into argv respecting single/double quotes and
 // backslash escaping. Used so the test command is run WITHOUT a shell
@@ -167,17 +167,116 @@ export function validateTestCommand(command, rootDir) {
   return command;
 }
 
-export function runVerify(project, featureName) {
-  const { config } = project;
+// ---------- targeted test runs ----------
+//
+// Running the WHOLE suite to prove a handful of ACs is what makes `verify`
+// slow in big repos. The engine already knows which test files carry the
+// feature's @spec tags, so for runners that accept file paths it appends only
+// those files (`testFileArgs: "auto"`, the default). `{files}` in testCommand
+// puts them exactly where the user wants; `testFileArgs: false` always runs
+// the full suite.
+
+const FILE_ARG_RUNNERS = new Set(['vitest', 'jest', 'mocha', 'pytest', 'py.test', 'tap']);
+const RUNNER_LAUNCHERS = new Set(['npx', 'pnpx', 'bunx', 'pnpm', 'yarn', 'bun', 'npm']);
+const MAX_TARGET_FILES = 200;
+const FILES_PLACEHOLDER = '{files}';
+
+const execName = (cmd) =>
+  path.basename(cmd).replace(/\.(cmd|exe|js|mjs)$/i, '');
+
+// Does this command line accept test file paths as trailing arguments?
+// Only well-known runners — anything else (gradle, mvn, cargo, go, make, a
+// custom script) keeps running the full suite, as before.
+export function supportsFileArgs(argv) {
+  if (argv.length === 0) return false;
+  const [exe, ...rest] = argv;
+  const name = execName(exe);
+  if (name === 'node') return rest.includes('--test');
+  if (/^python(\d+(\.\d+)*)?$/.test(name)) {
+    const i = rest.indexOf('-m');
+    return i !== -1 && FILE_ARG_RUNNERS.has(rest[i + 1]);
+  }
+  if (FILE_ARG_RUNNERS.has(name)) return true;
+  if (RUNNER_LAUNCHERS.has(name)) {
+    const positional = rest.filter((a) => !a.startsWith('-'));
+    const first = ['exec', 'dlx', 'x'].includes(positional[0]) ? positional[1] : positional[0];
+    return first !== undefined && FILE_ARG_RUNNERS.has(execName(first));
+  }
+  return false;
+}
+
+// Test files (inside project.testFiles) that carry a @spec tag of the given ACs.
+export function targetTestFiles(project, acIds) {
+  const ids = new Set(acIds);
+  const testFileSet = new Set(project.testFiles);
+  const files = new Set();
+  for (const t of project.annotations.specTags) {
+    if (ids.has(t.acId) && testFileSet.has(t.file)) files.add(t.file);
+  }
+  return [...files].sort();
+}
+
+// Decides the final argv. Returns { argv, files } where `files` is the list
+// of targeted files (null = the full suite runs).
+export function resolveTestArgv(argv, files, mode = 'auto') {
+  const hasPlaceholder = argv.slice(1).includes(FILES_PLACEHOLDER);
+  const usable =
+    files.length > 0 && files.length <= MAX_TARGET_FILES && !files.some((f) => f.startsWith('-'));
+  if (hasPlaceholder) {
+    const out = [argv[0]];
+    for (const a of argv.slice(1)) {
+      if (a === FILES_PLACEHOLDER) {
+        if (usable) out.push(...files);
+      } else out.push(a);
+    }
+    return { argv: out, files: usable ? files : null };
+  }
+  if (mode !== false && mode !== 'false' && usable && supportsFileArgs(argv)) {
+    return { argv: [...argv, ...files], files };
+  }
+  return { argv, files: null };
+}
+
+// ---------- execution ----------
+
+function loadFeature(project, featureName) {
   const feature = project.features.find((f) => f.name === featureName);
   if (!feature) {
     throw new Error(
-      `feature "${featureName}" not found in ${config.specDir}/features/`
+      `feature "${featureName}" not found in ${project.config.specDir}/features/`
     );
   }
   if (!feature.spec) {
     throw new Error(`feature "${featureName}" has no spec.md`);
   }
+  return feature;
+}
+
+function readJsonReport(config, proc) {
+  let jsonText = null;
+  if (config.reporterOutputFile) {
+    const p = resolvePathWithin(config.rootDir, config.reporterOutputFile, 'reporterOutputFile');
+    if (existsSync(p)) jsonText = readFileSync(p, 'utf-8');
+  }
+  if (jsonText === null) {
+    // try to find the JSON in stdout (jest --json writes to stdout)
+    const start = (proc.stdout || '').indexOf('{');
+    if (start >= 0) jsonText = (proc.stdout || '').slice(start);
+  }
+  if (jsonText === null) {
+    throw new Error(
+      `reporter ${config.reporter}: could not find the JSON — set "reporterOutputFile" or ensure the JSON is on stdout`
+    );
+  }
+  return parseJsonReport(jsonText);
+}
+
+// Runs the test command ONCE and records the proof of every requested feature.
+// Verifying N features costs one test run, not N.
+export function runVerifyBatch(project, featureNames) {
+  const { config } = project;
+  const features = [...new Set(featureNames)].map((n) => loadFeature(project, n));
+  if (features.length === 0) throw new Error('no feature to verify');
   if (!config.testCommand) {
     throw new Error(
       'set "testCommand" in onpspec.config.json (e.g. "node --test" or "npx vitest run --reporter=json --outputFile=.spec/verification/raw.json")'
@@ -193,10 +292,16 @@ export function runVerify(project, featureName) {
 
   // Run without a shell: the configured command is tokenized into argv so no
   // dynamic input is ever interpreted by an OS shell (avoids command injection).
-  const argv = tokenizeCommand(config.testCommand);
-  if (argv.length === 0) {
+  const baseArgv = tokenizeCommand(config.testCommand);
+  if (baseArgv.length === 0) {
     throw new Error('testCommand is empty after parsing');
   }
+  const acIds = features.flatMap((f) => allAcs(f.spec).map((ac) => ac.id));
+  const { argv, files: targetedFiles } = resolveTestArgv(
+    baseArgv,
+    targetTestFiles(project, acIds),
+    config.testFileArgs
+  );
   const [configuredCommand, ...args] = argv;
   const command = validateTestCommand(configuredCommand, config.rootDir);
   const proc = spawnSync(command, args, {
@@ -212,22 +317,7 @@ export function runVerify(project, featureName) {
   if (config.reporter === 'tap') {
     tests = parseTap(output);
   } else if (config.reporter === 'vitest-json' || config.reporter === 'jest-json') {
-    let jsonText = null;
-    if (config.reporterOutputFile) {
-      const p = resolvePathWithin(config.rootDir, config.reporterOutputFile, 'reporterOutputFile');
-      if (existsSync(p)) jsonText = readFileSync(p, 'utf-8');
-    }
-    if (jsonText === null) {
-      // try to find the JSON in stdout (jest --json writes to stdout)
-      const start = (proc.stdout || '').indexOf('{');
-      if (start >= 0) jsonText = (proc.stdout || '').slice(start);
-    }
-    if (jsonText === null) {
-      throw new Error(
-        `reporter ${config.reporter}: could not find the JSON — set "reporterOutputFile" or ensure the JSON is on stdout`
-      );
-    }
-    tests = parseJsonReport(jsonText);
+    tests = readJsonReport(config, proc);
   } else if (config.reporter === 'exitcode') {
     tests = []; // no per-test granularity
   } else {
@@ -244,47 +334,58 @@ export function runVerify(project, featureName) {
     project.annotations.specTags.filter((t) => testFileSet.has(t.file)).map((t) => t.acId)
   );
 
-  const results = {};
-  const featureAcs = allAcs(feature.spec);
-  for (const ac of featureAcs) {
-    if (acResults[ac.id]) {
-      results[ac.id] = { ...acResults[ac.id], method: config.reporter };
-    } else if (config.reporter === 'exitcode' && annotatedAcs.has(ac.id)) {
-      // no per-test: only the global exit code proves it (weak, but explicit)
-      results[ac.id] = {
-        status: proc.status === 0 ? 'pass' : 'fail',
-        testName: null,
-        method: 'exitcode',
-      };
-    }
-    // no matching tag → no entry → audit flags AC_NO_PROOF
-  }
-
-  // UX hint: ran tests but no title carries a feature AC tag
-  const anyTagMatched = featureAcs.some((ac) => acResults[ac.id]);
-  const hint =
-    tests.length > 0 && !anyTagMatched && config.reporter !== 'exitcode'
-      ? `no test title contains @spec:${featureAcs[0]?.id || 'AC-xxx'} — the tag goes in the test TITLE`
-      : null;
-
-  const record = {
-    feature: featureName,
-    timestamp: new Date().toISOString(),
-    gitRev: gitRev(config.rootDir),
-    command: config.testCommand,
-    reporter: config.reporter,
-    exitCode: proc.status,
-    testsParsed: tests.length,
-    results,
-    principles: principleResults,
-  };
-
+  const timestamp = new Date().toISOString();
+  const rev = gitRev(config.rootDir);
   const outDir = path.join(project.specRoot, 'verification');
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(
-    path.join(outDir, `${featureName}.json`),
-    `${JSON.stringify(record, null, 2)}\n`
-  );
 
-  return { record, rawOutput: output, hint };
+  const runs = features.map((feature) => {
+    const results = {};
+    const featureAcs = allAcs(feature.spec);
+    for (const ac of featureAcs) {
+      if (acResults[ac.id]) {
+        results[ac.id] = { ...acResults[ac.id], method: config.reporter };
+      } else if (config.reporter === 'exitcode' && annotatedAcs.has(ac.id)) {
+        // no per-test: only the global exit code proves it (weak, but explicit)
+        results[ac.id] = {
+          status: proc.status === 0 ? 'pass' : 'fail',
+          testName: null,
+          method: 'exitcode',
+        };
+      }
+      // no matching tag → no entry → audit flags AC_NO_PROOF
+    }
+
+    // UX hint: ran tests but no title carries a feature AC tag
+    const anyTagMatched = featureAcs.some((ac) => acResults[ac.id]);
+    const hint =
+      tests.length > 0 && !anyTagMatched && config.reporter !== 'exitcode'
+        ? `no test title contains @spec:${featureAcs[0]?.id || 'AC-xxx'} — the tag goes in the test TITLE`
+        : null;
+
+    const record = {
+      feature: feature.name,
+      timestamp,
+      gitRev: rev,
+      command: config.testCommand,
+      reporter: config.reporter,
+      exitCode: proc.status,
+      scope: targetedFiles ? 'files' : 'suite',
+      ...(targetedFiles ? { testFiles: targetedFiles } : {}),
+      testsParsed: tests.length,
+      results,
+      principles: principleResults,
+    };
+    writeFileSync(
+      path.join(outDir, `${feature.name}.json`),
+      `${JSON.stringify(record, null, 2)}\n`
+    );
+    return { record, rawOutput: output, hint };
+  });
+
+  return runs;
+}
+
+export function runVerify(project, featureName) {
+  return runVerifyBatch(project, [featureName])[0];
 }

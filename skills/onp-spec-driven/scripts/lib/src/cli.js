@@ -28,7 +28,7 @@ import { loadConfig, DEFAULT_CONFIG } from './config.js';
 import { loadProject } from './core/project.js';
 import { auditProject } from './core/audit.js';
 import { renderTerminal, renderJson, renderMarkdown } from './core/report.js';
-import { runVerify, gitRev } from './core/verify.js';
+import { runVerifyBatch, gitRev } from './core/verify.js';
 import { scaffoldTests } from './core/scaffold.js';
 import { MEMORY_FILE_BY_AGENT, renderAgentMemory } from './core/memory.js';
 import { allAcs } from './parsers/spec.js';
@@ -153,8 +153,12 @@ commands:
   audit [--ci] [--json] [--md <file>]
                       audits specification ↔ tasks ↔ tests ↔ code ↔ constitution
                       exit 1 on error (use in CI)
-  verify <feature>    runs the tests and records the proof of each acceptance
-                      criterion (the test runner decides)
+  verify <feature...> | --all
+                      runs the tests and records the proof of each acceptance
+                      criterion (the test runner decides). Only the test files
+                      tagged with the feature's @spec run when the runner
+                      supports it (testFileArgs); several features / --all
+                      share ONE test run
   scaffold <feature> [--force]
                       generates a (failing) test skeleton for each acceptance
                       criterion that still has no test
@@ -1038,35 +1042,44 @@ export async function run(argv) {
   }
 
   if (command === 'verify') {
-    const featureName = positional[0];
-    if (!featureName) {
-      console.error('usage: onp-spec verify <feature>');
+    // parseFlags lets `--all f1` swallow f1 as the flag value — keep it as a name
+    const names = [...positional];
+    if (typeof flags.all === 'string') names.push(flags.all);
+    if (flags.all) names.push(...project.features.filter((f) => f.spec).map((f) => f.name));
+    if (names.length === 0) {
+      console.error('usage: onp-spec verify <feature...> | --all');
       return 2;
     }
-    const { record, hint } = runVerify(project, featureName);
-    const failSignals = recordVerify(project.specRoot, record, config.lessons);
-    const total = Object.keys(record.results).length;
-    const passed = Object.values(record.results).filter((r) => r.status === 'pass').length;
-    console.log(
-      `verify ${featureName}: ${passed}/${total} acceptance criteria with PASS proof · ${record.testsParsed} test(s) read · exit ${record.exitCode}`
-    );
-    for (const [acId, r] of Object.entries(record.results)) {
-      const mark = r.status === 'pass' ? '✔' : r.status === 'skip' ? '○ SKIP (not proof)' : '✘';
-      console.log(`  ${mark} ${acId} ${r.testName ? `— ${r.testName}` : ''}`);
-    }
-    if (hint) console.log(`  hint: ${hint}`);
-    const principles = Object.entries(record.principles || {});
-    if (principles.length) {
-      console.log('  principles:');
-      for (const [pId, r] of principles) {
-        console.log(`  ${r.status === 'pass' ? '✔' : '✘'} ${pId} — ${r.testName}`);
+    const runs = runVerifyBatch(project, names);
+    let exit = 0;
+    for (const { record, hint } of runs) {
+      const featureName = record.feature;
+      const failSignals = recordVerify(project.specRoot, record, config.lessons);
+      const total = Object.keys(record.results).length;
+      const passed = Object.values(record.results).filter((r) => r.status === 'pass').length;
+      const scope = record.scope === 'files' ? ` · ${record.testFiles.length} test file(s) run` : '';
+      console.log(
+        `verify ${featureName}: ${passed}/${total} acceptance criteria with PASS proof · ${record.testsParsed} test(s) read${scope} · exit ${record.exitCode}`
+      );
+      for (const [acId, r] of Object.entries(record.results)) {
+        const mark = r.status === 'pass' ? '✔' : r.status === 'skip' ? '○ SKIP (not proof)' : '✘';
+        console.log(`  ${mark} ${acId} ${r.testName ? `— ${r.testName}` : ''}`);
       }
+      if (hint) console.log(`  hint: ${hint}`);
+      const principles = Object.entries(record.principles || {});
+      if (principles.length) {
+        console.log('  principles:');
+        for (const [pId, r] of principles) {
+          console.log(`  ${r.status === 'pass' ? '✔' : '✘'} ${pId} — ${r.testName}`);
+        }
+      }
+      if (failSignals) {
+        console.log(`  ${failSignals} fail/skip signal(s) recorded in the history`);
+      }
+      console.log(`proof recorded in .spec/verification/${featureName}.json — run \`onp-spec audit\``);
+      if (!(passed === total && total > 0)) exit = 1;
     }
-    if (failSignals) {
-      console.log(`  ${failSignals} fail/skip signal(s) recorded in the history`);
-    }
-    console.log(`proof recorded in .spec/verification/${featureName}.json — run \`onp-spec audit\``);
-    return passed === total && total > 0 ? 0 : 1;
+    return exit;
   }
 
   if (command === 'scaffold') {

@@ -4,7 +4,7 @@
 export { loadConfig, DEFAULT_CONFIG } from './config.js';
 export { loadProject } from './core/project.js';
 export { auditProject } from './core/audit.js';
-export { runVerify } from './core/verify.js';
+export { runVerify, runVerifyBatch } from './core/verify.js';
 export { scaffoldTests } from './core/scaffold.js';
 export { renderTerminal, renderJson, renderMarkdown } from './core/report.js';
 export {
