@@ -108,3 +108,31 @@ export function latestMtime(rootDir, files) {
   }
   return latest;
 }
+
+// mtimes of every src/test file, stat'ed once per project. The audit asks for
+// "the latest change" once per feature; without the cache that is
+// features × files stat calls.
+export function fileMtimes(project) {
+  if (!project.mtimeCache) {
+    const cache = new Map();
+    for (const rel of new Set([...project.srcFiles, ...project.testFiles])) {
+      try {
+        cache.set(rel, statSync(path.join(project.config.rootDir, rel)).mtimeMs);
+      } catch {
+        // listed but missing — handled by another finding
+      }
+    }
+    Object.defineProperty(project, 'mtimeCache', { value: cache, enumerable: false });
+  }
+  return project.mtimeCache;
+}
+
+export function latestProjectMtime(project, files) {
+  const cache = fileMtimes(project);
+  let latest = 0;
+  for (const rel of files) {
+    const m = cache.get(rel);
+    if (m !== undefined && m > latest) latest = m;
+  }
+  return latest;
+}

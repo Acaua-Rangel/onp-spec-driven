@@ -10,7 +10,8 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { allAcs, SPEC_STATUSES, ASM_STATUSES, Q_STATUSES } from '../parsers/spec.js';
 import { grepPattern } from '../parsers/annotations.js';
-import { latestMtime } from './project.js';
+import { latestProjectMtime } from './project.js';
+import { targetTestFiles } from './verify.js';
 
 // base severity; in --ci mode the codes in CI_ESCALATES become errors
 const CI_ESCALATES = new Set(['AC_NO_PROOF', 'VERIFY_STALE', 'Q_OPEN', 'AC_NO_TASK', 'FILE_ORPHAN']);
@@ -375,10 +376,15 @@ export function auditProject(project, { ci = false } = {}) {
     // verify stale?
     const verification = project.verifications[name] || null;
     if (verification?.timestamp) {
-      const codeMtime = latestMtime(config.rootDir, [
-        ...project.srcFiles,
-        ...project.testFiles,
-      ]);
+      // Only what can change THIS feature's proof counts: its tagged test
+      // files plus the source files its tasks claim. A feature whose tasks
+      // claim no files cannot be attributed, so all source files count.
+      const taskFiles = (feature.tasks?.tasks || []).flatMap((t) => t.files.map((f) => f.split('\\').join('/')));
+      const relevant = [
+        ...targetTestFiles(project, allAcs(spec).map((ac) => ac.id)),
+        ...(taskFiles.length > 0 ? taskFiles : project.srcFiles),
+      ];
+      const codeMtime = latestProjectMtime(project, relevant);
       if (codeMtime > Date.parse(verification.timestamp)) {
         findings.push(
           finding(
