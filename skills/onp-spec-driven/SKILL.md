@@ -272,6 +272,11 @@ decision becomes either an assumption (you assumed it) or an open question
 - `onp-spec verify <feature>` — runs the tests, records the proof per
   acceptance criterion in `.spec/verification/<feature>.json`. Only PASS
   counts (skip is not proof).
+  It runs ONLY the test files tagged with that feature's `@spec:AC-xxx` (when
+  the runner accepts file paths), so it stays fast in big repos. Several
+  features? One command — `onp-spec verify <f1> <f2>` or `verify --all` —
+  runs the tests once. Run it when the audit flags `AC_NO_PROOF` /
+  `VERIFY_STALE` for that feature, not after every small edit.
 - `onp-spec audit --ci` — the verdict. Exit 0 = aligned. Exit 1 = read each
   problem and resolve it. **Paste the final output in the conversation**
   and translate what it means in one sentence.

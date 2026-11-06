@@ -138,14 +138,14 @@ graph TD
   Never mentions npm/npx; resolves `scripts/` relative to the skill's own
   directory.
 - `scripts/onp-spec.mjs` + `scripts/lib/` + `scripts/templates/` — generated
-  copy of `src/` + `templates/` (embedded engine). Zero dependencies; only
+  at install time (not committed) copy of `src/` + `templates/` (embedded engine). Zero dependencies; only
   requirement: Node ≥ 18 present in the environment (already a requirement for
   JS projects; for non-JS projects the structural audit keeps working — only
   `verify` depends on the stack's runner).
 - `src/` — single source of truth; receives all the fixes.
-- `tools/build-skill.mjs` — generates `scripts/` from `src/`+`templates/`;
-  `test/skill-sync.test.js` fails if `scripts/` diverges from what it
-  generates.
+- `tools/build-skill.mjs` / `src/core/skill-engine.js` — generate `scripts/`
+  from `src/`+`templates/`; `test/skill-sync.test.js` checks the generated copy
+  mirrors the source and that `init --agents` delivers a runnable skill.
 
 ### Central decision: embedded mechanical engine (not "the agent audits by hand")
 

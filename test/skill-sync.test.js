@@ -1,16 +1,19 @@
-// Garante que o motor embarcado em CADA skill (claude, antigravity, codex e
-// cursor) está sincronizado com src/ e templates/ — mata o drift silencioso
-// (SK-5). Se este teste falhar: node tools/build-skill.mjs
-
-import { test } from 'node:test';
+// O motor vive UMA vez (src/ + templates/). Cada skill instalada recebe uma
+// cópia gerada (scripts/): este teste garante que a geração espelha a fonte e
+// que `init --agents` entrega uma skill executável. Para instalar à mão a
+// partir de um clone: node tools/build-skill.mjs
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, rmSync, mkdirSync } from 'fs';
+import { spawnSync } from 'child_process';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ENTRY } from '../tools/build-skill.mjs';
+import { ENTRY, buildSkillDir, SKILLS } from '../tools/build-skill.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SKILLS = ['onp-spec-driven', 'onp-spec-driven-antigravity', 'onp-spec-driven-codex', 'onp-spec-driven-cursor', 'onp-spec-driven-copilot', 'onp-spec-driven-gemini'];
+const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'onpspec-skillsync-'));
+after(() => rmSync(tmpRoot, { recursive: true, force: true }));
 
 function walk(dir, base = dir) {
   const out = [];
@@ -23,41 +26,55 @@ function walk(dir, base = dir) {
   return out.sort();
 }
 
-for (const skill of SKILLS) {
-  const SCRIPTS = path.join(ROOT, 'skills', skill, 'scripts');
+test('o repositório não versiona cópias do motor dentro das skills', () => {
+  const gitignore = readFileSync(path.join(ROOT, '.gitignore'), 'utf-8');
+  assert.match(gitignore, /^skills\/\*\/scripts\/$/m);
+  const tracked = spawnSync('git', ['ls-files', 'skills'], { cwd: ROOT, encoding: 'utf-8' }).stdout;
+  assert.doesNotMatch(tracked, /\/scripts\//, 'skills/*/scripts/ não deve estar no git');
+});
 
-  test(`[${skill}] motor embarcado existe (rode: node tools/build-skill.mjs)`, () => {
-    assert.ok(existsSync(SCRIPTS), `skills/${skill}/scripts/ não existe`);
-  });
+const built = path.join(tmpRoot, 'engine');
+test('buildSkillDir gera lib/src e lib/templates espelhando a fonte, mais o entrypoint', () => {
+  buildSkillDir(built);
+  const srcFiles = walk(path.join(ROOT, 'src'));
+  assert.deepEqual(walk(path.join(built, 'lib', 'src')), srcFiles);
+  for (const rel of srcFiles) {
+    assert.equal(
+      readFileSync(path.join(built, 'lib', 'src', rel), 'utf-8'),
+      readFileSync(path.join(ROOT, 'src', rel), 'utf-8'),
+      `conteúdo diverge: ${rel}`
+    );
+  }
+  const tplFiles = walk(path.join(ROOT, 'templates')).filter((f) => !f.startsWith('agents/'));
+  assert.deepEqual(walk(path.join(built, 'lib', 'templates')), tplFiles);
+  assert.equal(readFileSync(path.join(built, 'onp-spec.mjs'), 'utf-8'), ENTRY);
+});
 
-  test(`[${skill}] scripts/lib/src espelha src/ byte a byte`, () => {
-    const srcFiles = walk(path.join(ROOT, 'src'));
-    const libFiles = walk(path.join(SCRIPTS, 'lib', 'src'));
-    assert.deepEqual(libFiles, srcFiles, 'lista de arquivos diverge — regenere o build');
-    for (const rel of srcFiles) {
-      assert.equal(
-        readFileSync(path.join(SCRIPTS, 'lib', 'src', rel), 'utf-8'),
-        readFileSync(path.join(ROOT, 'src', rel), 'utf-8'),
-        `conteúdo diverge: ${rel} — rode node tools/build-skill.mjs`
-      );
-    }
-  });
+test('o motor gerado executa de verdade', () => {
+  const proc = spawnSync('node', [path.join(built, 'onp-spec.mjs'), 'version'], { encoding: 'utf-8' });
+  assert.equal(proc.status, 0, proc.stderr);
+  assert.match(proc.stdout, /embedded/);
+});
 
-  test(`[${skill}] scripts/lib/templates espelha templates/ (sem agents/)`, () => {
-    const tplFiles = walk(path.join(ROOT, 'templates')).filter((f) => !f.startsWith('agents/'));
-    const libFiles = walk(path.join(SCRIPTS, 'lib', 'templates'));
-    assert.deepEqual(libFiles, tplFiles);
-    for (const rel of tplFiles) {
-      assert.equal(
-        readFileSync(path.join(SCRIPTS, 'lib', 'templates', rel), 'utf-8'),
-        readFileSync(path.join(ROOT, 'templates', rel), 'utf-8'),
-        `template diverge: ${rel}`
-      );
-    }
-  });
-
-  test(`[${skill}] entrypoint onp-spec.mjs é o gerado pelo build`, () => {
-    assert.equal(readFileSync(path.join(SCRIPTS, 'onp-spec.mjs'), 'utf-8'), ENTRY);
+const DEST_BY_AGENT = {
+  claude: '.claude', antigravity: '.agents', codex: '.agents',
+  cursor: '.cursor', copilot: '.github', gemini: '.gemini',
+};
+for (const [agent, dir] of Object.entries(DEST_BY_AGENT)) {
+  test(`init --agents ${agent} instala a skill com o motor gerado e executável`, () => {
+    const proj = path.join(tmpRoot, `proj-${agent}`);
+    mkdirSync(proj, { recursive: true });
+    const init = spawnSync('node', [path.join(ROOT, 'bin', 'onp-spec.js'), 'init', '--agents', agent], {
+      cwd: proj, encoding: 'utf-8',
+    });
+    assert.equal(init.status, 0, init.stdout + init.stderr);
+    const skill = path.join(proj, dir, 'skills', 'onp-spec-driven');
+    assert.ok(existsSync(path.join(skill, 'SKILL.md')));
+    assert.ok(existsSync(path.join(skill, 'scripts', 'onp-spec.mjs')), 'scripts/ não foi gerado');
+    const run = spawnSync('node', [path.join(skill, 'scripts', 'onp-spec.mjs'), 'status'], {
+      cwd: proj, encoding: 'utf-8',
+    });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
   });
 }
 

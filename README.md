@@ -174,6 +174,7 @@ project. The destination folder is **always** named `onp-spec-driven`:
 
 ```bash
 git clone --depth 1 https://github.com/Acaua-Rangel/onp-spec-driven.git /tmp/onp-spec
+node /tmp/onp-spec/tools/build-skill.mjs   # generates each skill's embedded engine (scripts/)
 
 # Claude Code (in this project)
 mkdir -p .claude/skills
@@ -210,6 +211,7 @@ copying it as `onp-spec-driven-cursor` would make it invalid.
 
 ```bash
 git clone --depth 1 https://github.com/Acaua-Rangel/onp-spec-driven.git /tmp/onp-spec
+node /tmp/onp-spec/tools/build-skill.mjs   # generates each skill's embedded engine (scripts/)
 
 # Claude Code (global)
 mkdir -p ~/.claude/skills

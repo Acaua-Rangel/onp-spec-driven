@@ -2,3 +2,5 @@ node_modules/
 benchmark/.vendor/
 *.log
 .DS_Store
+# embedded engine of each skill: generated from src/ (tools/build-skill.mjs, init --agents, prepack)
+skills/*/scripts/

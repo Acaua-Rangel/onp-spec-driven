@@ -26,6 +26,7 @@ import { TASK_STATUSES } from './parsers/tasks.js';
 import { DASH, foldStatus } from './util/text.js';
 import { loadConfig, DEFAULT_CONFIG } from './config.js';
 import { loadProject } from './core/project.js';
+import { buildSkillDir } from './core/skill-engine.js';
 import { enableTimings, renderTimings, timed } from './util/timing.js';
 import { auditProject } from './core/audit.js';
 import { renderTerminal, renderJson, renderMarkdown } from './core/report.js';
@@ -280,6 +281,11 @@ export function cmdInit(rootDir, flags, { resolveSkill = resolveSkillDir } = {})
       console.log(`· skill already installed at ${destRel} — kept`);
     } else {
       copyDirIfExists(skillDir, dest);
+      // the repository/npm skill folders carry no engine copy (it lives once,
+      // in src/): generate the skill's self-contained scripts/ on install
+      if (!existsSync(path.join(dest, 'scripts', 'onp-spec.mjs'))) {
+        buildSkillDir(path.join(dest, 'scripts'));
+      }
       console.log(`✔ skill installed at ${destRel} (${label})`);
     }
     // Cursor reads .cursor/skills AND .agents/skills natively (and .claude/

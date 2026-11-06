@@ -51,8 +51,11 @@ against the code, mechanically, in CI.
   - `SKILL.md` + `references/` — the agent's contract: the
     Specify → Design → Tasks → Execute → **Audit** flow, a correction loop
     limited to 3 iterations, 1 task = 1 commit, gate with pasted output.
-  - `scripts/` — **embedded mechanical engine** (generated from `src/` by
-    `node tools/build-skill.mjs`; `test/skill-sync.test.js` flags drift).
+  - `scripts/` — **embedded mechanical engine**, NOT committed: the repo keeps
+    a single copy of the engine (`src/`). It is generated into the installed
+    skill by `onp-spec init --agents`, by `npm pack` (`prepack`), or by hand
+    with `node tools/build-skill.mjs` (`test/skill-sync.test.js` checks the
+    generation).
     Installing = copying the folder into `.claude/skills/` (Claude Code),
     `.cursor/skills/` (Cursor — native Agent Skills since Cursor 2.4; the
     frontmatter `name:` MUST equal the folder name),
@@ -186,6 +189,14 @@ warning.
 Verify runs the command, extracts the result PER TEST, matches titles with
 `@spec:AC-xxx` and writes `.spec/verification/<feature>.json` with
 {ac, status, test, timestamp, gitRev}. Audit consumes that.
+
+Speed: for runners that accept file paths (`node --test`, vitest, jest,
+mocha, pytest, tap) verify runs ONLY the test files carrying the feature's
+`@spec` tags (`testFileArgs: "auto"`, default; `false` = full suite; a
+`{files}` token in `testCommand` marks where the paths go). `verify f1 f2` /
+`verify --all` share one test run. `--timings` (or `ONP_SPEC_TIMINGS=1`)
+prints where the time went. `VERIFY_STALE` only looks at the feature's own
+tagged tests and the files its tasks claim.
 
 ## Execution plan (src/core/plan.js)
 
