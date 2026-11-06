@@ -102,20 +102,6 @@ export function loadProject(config) {
   return project;
 }
 
-// Most recent modification timestamp among the given files (ms epoch).
-export function latestMtime(rootDir, files) {
-  let latest = 0;
-  for (const rel of files) {
-    try {
-      const st = statSync(path.join(rootDir, rel));
-      if (st.mtimeMs > latest) latest = st.mtimeMs;
-    } catch {
-      // file listed but non-existent — handled by another finding
-    }
-  }
-  return latest;
-}
-
 // mtimes of every src/test file, stat'ed once per project. The audit asks for
 // "the latest change" once per feature; without the cache that is
 // features × files stat calls.

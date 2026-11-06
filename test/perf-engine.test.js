@@ -9,7 +9,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { walkFiles, scanAnnotations, grepPatterns, grepKey } from '../src/parsers/annotations.js';
-import { loadProject } from '../src/core/project.js';
+import { loadProject, latestProjectMtime } from '../src/core/project.js';
 import { loadConfig } from '../src/config.js';
 
 const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'onp-spec.js');
@@ -74,4 +74,24 @@ test('--timings imprime as fases no stderr e não engole argumentos', () => {
   assert.match(proc.stderr, /timings:/);
   assert.match(proc.stderr, /walk files/);
   assert.match(proc.stderr, /scan annotations/);
+});
+
+test('grepPatterns: lote sem regex patológica resolve tudo num só subprocesso', () => {
+  const checks = [
+    { pattern: 'console\\.log', glob: 'src/**/*.js' },
+    { pattern: 'const ok', glob: 'src/**/*.js' },
+    { pattern: 'nunca-existe', glob: 'src/**/*.js' },
+    { pattern: 'x', glob: 'sem-arquivos/**' },
+  ];
+  const res = grepPatterns(root, checks, loadConfig(root).ignoreGlobs);
+  assert.equal(res.get(grepKey(checks[0])).hits.length, 1);
+  assert.equal(res.get(grepKey(checks[1])).hits.length, 1);
+  assert.equal(res.get(grepKey(checks[2])).hits.length, 0);
+  assert.deepEqual(res.get(grepKey(checks[3])).files, []);
+});
+
+test('latestProjectMtime ignora arquivo ausente e devolve o mais recente', () => {
+  const project = { config: { rootDir: root }, srcFiles: ['src/a.js', 'src/sumiu.js'], testFiles: ['test/a.test.js'] };
+  assert.ok(latestProjectMtime(project, ['src/a.js', 'src/sumiu.js']) > 0);
+  assert.equal(latestProjectMtime(project, ['src/sumiu.js']), 0);
 });
