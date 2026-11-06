@@ -11,7 +11,16 @@ export const DEFAULT_CONFIG = {
   testGlobs: ['test/**', 'tests/**', 'src/**/*.test.*', 'src/**/*.spec.*', '__tests__/**'],
   // implementation files that must be mapped to some task
   srcGlobs: ['src/**'],
-  ignoreGlobs: ['node_modules/**', '.git/**', 'dist/**', 'build/**', 'coverage/**', '.spec/**'],
+  ignoreGlobs: [
+    'node_modules/**', '.git/**', 'dist/**', 'build/**', 'coverage/**', '.spec/**',
+    // virtualenvs, caches and build output of other ecosystems — never source
+    // (nested only for names that are never a real package/module name; the
+    // ambiguous ones — venv, target — are top-level only)
+    '**/node_modules/**', '**/.venv/**', '**/__pycache__/**',
+    '**/.tox/**', '**/.mypy_cache/**', '**/.pytest_cache/**', '**/.ruff_cache/**',
+    '**/.gradle/**', '**/.next/**', '**/.nuxt/**', '**/.idea/**', '**/.turbo/**',
+    'venv/**', 'target/**', '.cache/**',
+  ],
   // command that runs the tests; used by `onp-spec verify`
   testCommand: null,
   // verify runs only the test files that carry the feature's @spec tags when

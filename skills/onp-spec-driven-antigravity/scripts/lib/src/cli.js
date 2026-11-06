@@ -26,6 +26,7 @@ import { TASK_STATUSES } from './parsers/tasks.js';
 import { DASH, foldStatus } from './util/text.js';
 import { loadConfig, DEFAULT_CONFIG } from './config.js';
 import { loadProject } from './core/project.js';
+import { enableTimings, renderTimings, timed } from './util/timing.js';
 import { auditProject } from './core/audit.js';
 import { renderTerminal, renderJson, renderMarkdown } from './core/report.js';
 import { runVerifyBatch, gitRev } from './core/verify.js';
@@ -150,10 +151,10 @@ commands:
                       in-progress | done) and/or its cost (--model and
                       --effort set Model:/Effort: — regenerate the plan
                       afterwards)
-  audit [--ci] [--json] [--md <file>]
+  audit [--ci] [--json] [--md <file>] [--timings]
                       audits specification ↔ tasks ↔ tests ↔ code ↔ constitution
                       exit 1 on error (use in CI)
-  verify <feature...> | --all
+  verify <feature...> | --all [--timings]
                       runs the tests and records the proof of each acceptance
                       criterion (the test runner decides). Only the test files
                       tagged with the feature's @spec run when the runner
@@ -976,7 +977,20 @@ function cmdLessons(config, positional, flags) {
   return 2;
 }
 
+// `--timings` (or ONP_SPEC_TIMINGS=1) prints where the time went, on stderr.
+// Stripped before parsing so it never swallows the next positional argument.
 export async function run(argv) {
+  if (argv.includes('--timings')) {
+    enableTimings();
+    argv = argv.filter((a) => a !== '--timings');
+  }
+  const code = await runCommand(argv);
+  const report = renderTimings();
+  if (report) console.error(report);
+  return code;
+}
+
+async function runCommand(argv) {
   const [command, ...rest] = argv;
   const { flags, positional } = parseFlags(rest);
   const rootDir = process.cwd();
@@ -1018,7 +1032,7 @@ export async function run(argv) {
   if (command === 'plan') return cmdPlan(project, positional, flags);
 
   if (command === 'audit') {
-    const audit = auditProject(project, { ci: Boolean(flags.ci) });
+    const audit = timed('audit checks', () => auditProject(project, { ci: Boolean(flags.ci) }));
     if (flags.json) {
       console.log(renderJson(audit));
     } else {

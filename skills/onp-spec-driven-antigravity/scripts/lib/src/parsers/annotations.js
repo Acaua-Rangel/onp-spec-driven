@@ -12,6 +12,9 @@ import { spawnSync } from 'child_process';
 import path from 'path';
 import { globToRegExp, anyGlobMatch } from '../util/text.js';
 
+// files bigger than this are never hand-written tests/sources worth scanning
+const MAX_SCAN_BYTES = 2 * 1024 * 1024;
+
 const RE_SPEC_TAG = /@spec:(AC-\d{3,})/g;
 const RE_PRINCIPLE_TAG = /@principle:(P-\d{3,})/g;
 
@@ -53,6 +56,10 @@ export function walkFiles(rootDir, { includeGlobs, ignoreGlobs }) {
       const rel = path.relative(rootDir, full).split(path.sep).join('/');
       if (anyGlobMatch(rel, ignore)) continue;
       if (entry.isDirectory()) {
+        // prune the whole subtree: `node_modules/**` matches 'node_modules/'
+        // but not the bare directory name, and without this the walk would
+        // enter every ignored directory and discard its files one by one
+        if (anyGlobMatch(`${rel}/`, ignore)) continue;
         walk(full);
       } else if (entry.isFile()) {
         if (anyGlobMatch(rel, include)) found.add(rel);
@@ -75,10 +82,14 @@ export function scanAnnotations(rootDir, files) {
     if (ext && !TEXT_EXTENSIONS.has(ext)) continue;
     let content;
     try {
-      content = readFileSync(path.join(rootDir, rel), 'utf-8');
+      const abs = path.join(rootDir, rel);
+      if (statSync(abs).size > MAX_SCAN_BYTES) continue; // generated/bundled blobs
+      content = readFileSync(abs, 'utf-8');
     } catch {
       continue;
     }
+    // fast path: most files carry no tag — skip the line split for them
+    if (!content.includes('@spec:') && !content.includes('@principle:')) continue;
     const lines = content.split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -94,68 +105,141 @@ export function scanAnnotations(rootDir, files) {
   return { specTags, principleTags };
 }
 
-// Searches for occurrences of a regex pattern in files matching a glob.
+// Searches for occurrences of regex patterns in files matching a glob.
 // Used by the constitution checks (forbidden/required).
 //
 // Runs in a SUBPROCESS with a timeout: a pathological regex coming from the
 // constitution (e.g. `(a+)+$`) would cause catastrophic backtracking and
 // hang the gate forever — here it is killed and becomes a finding, not a DoS.
+//
+// All rules run in ONE subprocess that reads each file once. Only if that
+// batch is killed (timeout) do the rules run one by one, to pinpoint which
+// regex is the culprit.
 const GREP_TIMEOUT_MS = 5000;
 
 const GREP_WORKER = `
 let input = '';
 process.stdin.on('data', (d) => (input += d));
 process.stdin.on('end', () => {
-  const { rootDir, pattern, files } = JSON.parse(input);
+  const { rootDir, rules } = JSON.parse(input);
   const { readFileSync } = require('fs');
   const path = require('path');
-  let re;
-  try { re = new RegExp(pattern); } catch (err) {
-    console.log(JSON.stringify({ error: 'invalid regex: ' + pattern + ' (' + err.message + ')', hits: [] }));
-    return;
+  const out = {};
+  const byFile = new Map();
+  for (const rule of rules) {
+    let re;
+    try { re = new RegExp(rule.pattern); } catch (err) {
+      out[rule.key] = { error: 'invalid regex: ' + rule.pattern + ' (' + err.message + ')', hits: [] };
+      continue;
+    }
+    out[rule.key] = { error: null, hits: [] };
+    for (const rel of rule.files) {
+      if (!byFile.has(rel)) byFile.set(rel, []);
+      byFile.get(rel).push({ key: rule.key, re });
+    }
   }
-  const hits = [];
-  for (const rel of files) {
+  for (const [rel, fileRules] of byFile) {
     let content;
     try { content = readFileSync(path.join(rootDir, rel), 'utf-8'); } catch { continue; }
     const lines = content.split(/\\r?\\n/);
     for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) hits.push({ file: rel, line: i + 1, text: lines[i].trim() });
+      for (const { key, re } of fileRules) {
+        if (re.test(lines[i])) out[key].hits.push({ file: rel, line: i + 1, text: lines[i].trim() });
+      }
     }
   }
-  console.log(JSON.stringify({ error: null, hits }));
+  console.log(JSON.stringify(out));
 });
 `;
 
-export function grepPattern(rootDir, pattern, glob, ignoreGlobs) {
-  const files = walkFiles(rootDir, { includeGlobs: [glob], ignoreGlobs });
-  // an invalid regex is ALWAYS flagged, even with an empty glob (compiling is
-  // cheap and safe; only execution can be pathological)
-  try {
-    new RegExp(pattern);
-  } catch (err) {
-    return { error: `invalid regex: ${pattern} (${err.message})`, hits: [], files };
-  }
-  if (files.length === 0) return { error: null, hits: [], files };
-
+function runGrepWorker(rootDir, rules, timeout) {
   const proc = spawnSync(process.execPath, ['-e', GREP_WORKER], {
-    input: JSON.stringify({ rootDir, pattern, files }),
+    input: JSON.stringify({ rootDir, rules }),
     encoding: 'utf-8',
-    timeout: GREP_TIMEOUT_MS,
+    timeout,
     maxBuffer: 64 * 1024 * 1024,
   });
-
-  if (proc.signal || proc.status === null) {
-    return {
-      error: `regex \`${pattern}\` exceeded ${GREP_TIMEOUT_MS / 1000}s (possible catastrophic backtracking) — simplify the pattern`,
-      hits: [],
-      files,
-    };
-  }
+  if (proc.signal || proc.status === null) return { killed: true };
   try {
-    const out = JSON.parse(proc.stdout);
-    return { error: out.error, hits: out.hits, files };
+    return { out: JSON.parse(proc.stdout) };
   } catch {
-    return { error: `failed to run the regex verification \`${pattern}\``, hits: [], files };
+    return { failed: true };
   }
+}
+
+const checkKey = (c) => `${c.pattern}\u0000${c.glob}`;
+
+// checks: [{ pattern, glob }] -> Map(key -> { error, hits, files }).
+// `grepKey(check)` gives the key to look results up.
+export function grepPatterns(rootDir, checks, ignoreGlobs) {
+  const results = new Map();
+  const filesByGlob = new Map();
+  const filesFor = (glob) => {
+    if (!filesByGlob.has(glob)) {
+      filesByGlob.set(glob, walkFiles(rootDir, { includeGlobs: [glob], ignoreGlobs }));
+    }
+    return filesByGlob.get(glob);
+  };
+
+  const runnable = [];
+  for (const c of checks) {
+    const key = checkKey(c);
+    if (results.has(key)) continue;
+    const files = filesFor(c.glob);
+    // an invalid regex is ALWAYS flagged, even with an empty glob (compiling
+    // is cheap and safe; only execution can be pathological)
+    try {
+      new RegExp(c.pattern);
+    } catch (err) {
+      results.set(key, { error: `invalid regex: ${c.pattern} (${err.message})`, hits: [], files });
+      continue;
+    }
+    if (files.length === 0) {
+      results.set(key, { error: null, hits: [], files });
+      continue;
+    }
+    results.set(key, null); // placeholder: reserves the key
+    runnable.push({ key, pattern: c.pattern, files });
+  }
+  if (runnable.length === 0) return results;
+
+  // a lone rule gains nothing from batching (and a pathological one must be
+  // killed after a single timeout, not two)
+  const batch = runnable.length > 1 ? runGrepWorker(rootDir, runnable, GREP_TIMEOUT_MS) : {};
+  if (batch.out) {
+    for (const r of runnable) {
+      const o = batch.out[r.key] || { error: null, hits: [] };
+      results.set(r.key, { error: o.error, hits: o.hits, files: r.files });
+    }
+    return results;
+  }
+
+  // batch killed or unreadable: run rule by rule so the bad regex is isolated
+  for (const r of runnable) {
+    const one = runGrepWorker(rootDir, [r], GREP_TIMEOUT_MS);
+    if (one.killed) {
+      results.set(r.key, {
+        error: `regex \`${r.pattern}\` exceeded ${GREP_TIMEOUT_MS / 1000}s (possible catastrophic backtracking) — simplify the pattern`,
+        hits: [],
+        files: r.files,
+      });
+    } else if (one.out) {
+      const o = one.out[r.key];
+      results.set(r.key, { error: o.error, hits: o.hits, files: r.files });
+    } else {
+      results.set(r.key, {
+        error: `failed to run the regex verification \`${r.pattern}\``,
+        hits: [],
+        files: r.files,
+      });
+    }
+  }
+  return results;
+}
+
+export const grepKey = checkKey;
+
+export function grepPattern(rootDir, pattern, glob, ignoreGlobs) {
+  const check = { pattern, glob };
+  return grepPatterns(rootDir, [check], ignoreGlobs).get(checkKey(check));
 }

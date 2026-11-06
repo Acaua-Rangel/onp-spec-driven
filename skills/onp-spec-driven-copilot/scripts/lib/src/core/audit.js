@@ -9,9 +9,10 @@
 import { existsSync } from 'fs';
 import path from 'path';
 import { allAcs, SPEC_STATUSES, ASM_STATUSES, Q_STATUSES } from '../parsers/spec.js';
-import { grepPattern } from '../parsers/annotations.js';
+import { grepPatterns, grepKey } from '../parsers/annotations.js';
 import { latestProjectMtime } from './project.js';
 import { targetTestFiles } from './verify.js';
+import { timed } from '../util/timing.js';
 
 // base severity; in --ci mode the codes in CI_ESCALATES become errors
 const CI_ESCALATES = new Set(['AC_NO_PROOF', 'VERIFY_STALE', 'Q_OPEN', 'AC_NO_TASK', 'FILE_ORPHAN']);
@@ -451,6 +452,14 @@ export function auditProject(project, { ci = false } = {}) {
     );
   } else {
     const constitution = project.constitution;
+    // every forbidden/required rule is searched in ONE pass (one subprocess,
+    // each file read once) instead of one walk + subprocess per rule
+    const grepChecks = constitution.principles.flatMap((p) =>
+      p.checks.filter((c) => c.kind === 'forbidden' || c.kind === 'required')
+    );
+    const grepResults = timed(`constitution checks (${grepChecks.length} rule(s))`, () =>
+      grepPatterns(config.rootDir, grepChecks, config.ignoreGlobs)
+    );
     for (const issue of constitution.parseIssues) {
       findings.push(
         finding(issue.code, 'error', issue.message, { file: constitution.file, line: issue.line })
@@ -486,12 +495,7 @@ export function auditProject(project, { ci = false } = {}) {
             );
           }
         } else if (check.kind === 'forbidden') {
-          const { error, hits, files } = grepPattern(
-            config.rootDir,
-            check.pattern,
-            check.glob,
-            config.ignoreGlobs
-          );
+          const { error, hits, files } = grepResults.get(grepKey(check));
           if (files.length === 0) {
             findings.push(
               finding(
@@ -521,12 +525,7 @@ export function auditProject(project, { ci = false } = {}) {
             );
           }
         } else if (check.kind === 'required') {
-          const { error, hits, files } = grepPattern(
-            config.rootDir,
-            check.pattern,
-            check.glob,
-            config.ignoreGlobs
-          );
+          const { error, hits, files } = grepResults.get(grepKey(check));
           if (files.length === 0) {
             findings.push(
               finding(

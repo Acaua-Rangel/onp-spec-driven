@@ -7,6 +7,8 @@ import { parseSpec } from '../parsers/spec.js';
 import { parseTasks } from '../parsers/tasks.js';
 import { parseConstitution } from '../parsers/constitution.js';
 import { walkFiles, scanAnnotations } from '../parsers/annotations.js';
+import { globToRegExp, anyGlobMatch } from '../util/text.js';
+import { timed } from '../util/timing.js';
 
 export function loadProject(config) {
   const { rootDir, specDir } = config;
@@ -79,18 +81,23 @@ export function loadProject(config) {
     }
   }
 
-  // test and source files
-  project.testFiles = walkFiles(rootDir, {
-    includeGlobs: config.testGlobs,
-    ignoreGlobs: config.ignoreGlobs,
-  });
-  project.srcFiles = walkFiles(rootDir, {
-    includeGlobs: config.srcGlobs,
-    ignoreGlobs: [...config.ignoreGlobs, ...config.testGlobs],
-  });
-  project.annotations = scanAnnotations(rootDir, [
-    ...new Set([...project.testFiles, ...project.srcFiles]),
-  ]);
+  // test and source files: ONE walk, then classified (a test file is never
+  // also a source file)
+  const testRe = config.testGlobs.map(globToRegExp);
+  const srcRe = config.srcGlobs.map(globToRegExp);
+  const all = timed('walk files', () =>
+    walkFiles(rootDir, {
+      includeGlobs: [...config.testGlobs, ...config.srcGlobs],
+      ignoreGlobs: config.ignoreGlobs,
+    })
+  );
+  for (const rel of all) {
+    if (anyGlobMatch(rel, testRe)) project.testFiles.push(rel);
+    else if (anyGlobMatch(rel, srcRe)) project.srcFiles.push(rel);
+  }
+  project.annotations = timed(`scan annotations (${all.length} files)`, () =>
+    scanAnnotations(rootDir, all)
+  );
 
   return project;
 }
