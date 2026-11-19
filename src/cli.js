@@ -152,9 +152,9 @@ commands:
                       in-progress | done) and/or its cost (--model and
                       --effort set Model:/Effort: — regenerate the plan
                       afterwards)
-  audit [--ci] [--json] [--md <file>] [--timings]
+  audit [--feature <name>] [--ci] [--json] [--md <file>] [--timings]
                       audits specification ↔ tasks ↔ tests ↔ code ↔ constitution
-                      exit 1 on error (use in CI)
+                      (or only one feature with --feature) · exit 1 on error
   verify <feature...> | --all [--timings]
                       runs the tests and records the proof of each acceptance
                       criterion (the test runner decides). Only the test files
@@ -1038,7 +1038,14 @@ async function runCommand(argv) {
   if (command === 'plan') return cmdPlan(project, positional, flags);
 
   if (command === 'audit') {
-    const audit = timed('audit checks', () => auditProject(project, { ci: Boolean(flags.ci) }));
+    if (flags.feature === true) {
+      console.error('usage: onp-spec audit [--feature <name>] [--ci] [--json] [--md <file>]');
+      return 2;
+    }
+    const featureFilter = typeof flags.feature === 'string' ? flags.feature : (positional[0] || null);
+    const audit = timed('audit checks', () =>
+      auditProject(project, { ci: Boolean(flags.ci), feature: featureFilter })
+    );
     if (flags.json) {
       console.log(renderJson(audit));
     } else {

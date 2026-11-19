@@ -21,9 +21,17 @@ function finding(code, severity, message, extra = {}) {
   return { code, severity, message, ...extra };
 }
 
-export function auditProject(project, { ci = false } = {}) {
+export function auditProject(project, { ci = false, feature: featureName = null } = {}) {
   const findings = [];
   const { config } = project;
+
+  const targetFeature = featureName
+    ? project.features.find((f) => f.name === featureName)
+    : null;
+  if (featureName && !targetFeature) {
+    throw new Error(`feature "${featureName}" not found in ${config.specDir}/features/`);
+  }
+  const featuresToAudit = targetFeature ? [targetFeature] : project.features;
 
   for (const err of project.errors) {
     findings.push(finding('PROJECT_INVALID', 'error', err));
@@ -42,13 +50,15 @@ export function auditProject(project, { ci = false } = {}) {
     const register = (id, file, line) => {
       if (seen.has(id)) {
         const first = seen.get(id);
-        findings.push(
-          finding('ID_DUPLICATE', 'error', `${id} defined in ${first.file} and in ${file}`, {
-            feature: feature.name,
-            file,
-            line,
-          })
-        );
+        if (!targetFeature || first.feature === targetFeature.name || feature.name === targetFeature.name) {
+          findings.push(
+            finding('ID_DUPLICATE', 'error', `${id} defined in ${first.file} and in ${file}`, {
+              feature: feature.name,
+              file,
+              line,
+            })
+          );
+        }
       } else {
         seen.set(id, { feature: feature.name, file, line });
       }
@@ -94,7 +104,7 @@ export function auditProject(project, { ci = false } = {}) {
   }
 
   // ---------- specs ----------
-  for (const feature of project.features) {
+  for (const feature of featuresToAudit) {
     const { name, spec, tasks } = feature;
     if (!spec) {
       findings.push(
@@ -400,43 +410,45 @@ export function auditProject(project, { ci = false } = {}) {
   }
 
   // ---------- orphan tests (classic drift) ----------
-  const seenOrphan = new Set();
-  for (const tag of project.annotations.specTags) {
-    if (!knownAcIds.has(tag.acId)) {
-      const key = `${tag.acId}:${tag.file}`;
-      if (seenOrphan.has(key)) continue;
-      seenOrphan.add(key);
-      findings.push(
-        finding(
-          'TEST_ORPHAN',
-          'error',
-          `test annotated with @spec:${tag.acId}, but that acceptance criterion does not exist in any specification (did the spec change and the test lag behind?)`,
-          { file: tag.file, line: tag.line }
-        )
-      );
-    }
-  }
-
-  // ---------- orphan code ----------
-  const anyTasks = project.features.some((f) => f.tasks && f.tasks.tasks.length > 0);
-  if (anyTasks) {
-    const claimed = new Set();
-    for (const feature of project.features) {
-      if (!feature.tasks) continue;
-      for (const task of feature.tasks.tasks) {
-        for (const f of task.files) claimed.add(f.split('\\').join('/'));
-      }
-    }
-    for (const src of project.srcFiles) {
-      if (!claimed.has(src)) {
+  if (!targetFeature) {
+    const seenOrphan = new Set();
+    for (const tag of project.annotations.specTags) {
+      if (!knownAcIds.has(tag.acId)) {
+        const key = `${tag.acId}:${tag.file}`;
+        if (seenOrphan.has(key)) continue;
+        seenOrphan.add(key);
         findings.push(
           finding(
-            'FILE_ORPHAN',
-            'warning',
-            `${src} is not mapped by any task — which requirement does this code serve?`,
-            { file: src }
+            'TEST_ORPHAN',
+            'error',
+            `test annotated with @spec:${tag.acId}, but that acceptance criterion does not exist in any specification (did the spec change and the test lag behind?)`,
+            { file: tag.file, line: tag.line }
           )
         );
+      }
+    }
+
+    // ---------- orphan code ----------
+    const anyTasks = project.features.some((f) => f.tasks && f.tasks.tasks.length > 0);
+    if (anyTasks) {
+      const claimed = new Set();
+      for (const feature of project.features) {
+        if (!feature.tasks) continue;
+        for (const task of feature.tasks.tasks) {
+          for (const f of task.files) claimed.add(f.split('\\').join('/'));
+        }
+      }
+      for (const src of project.srcFiles) {
+        if (!claimed.has(src)) {
+          findings.push(
+            finding(
+              'FILE_ORPHAN',
+              'warning',
+              `${src} is not mapped by any task — which requirement does this code serve?`,
+              { file: src }
+            )
+          );
+        }
       }
     }
   }
@@ -568,14 +580,17 @@ export function auditProject(project, { ci = false } = {}) {
   const errors = findings.filter((f) => f.severity === 'error');
   const warnings = findings.filter((f) => f.severity === 'warning');
 
-  const totalAcs = project.features.reduce(
+  const totalAcs = featuresToAudit.reduce(
     (n, f) => n + (f.spec ? allAcs(f.spec).length : 0),
     0
   );
+  const auditedAcIds = new Set(
+    featuresToAudit.flatMap((f) => (f.spec ? allAcs(f.spec).map((a) => a.id) : []))
+  );
   const acsWithTest = new Set(
-    testSpecTags.filter((t) => knownAcIds.has(t.acId)).map((t) => t.acId)
+    testSpecTags.filter((t) => auditedAcIds.has(t.acId)).map((t) => t.acId)
   ).size;
-  const acsProven = project.features.reduce((n, f) => {
+  const acsProven = featuresToAudit.reduce((n, f) => {
     const v = project.verifications[f.name];
     if (!v?.results || !f.spec) return n;
     return (
@@ -588,16 +603,16 @@ export function auditProject(project, { ci = false } = {}) {
     ok: errors.length === 0,
     exitCode: errors.length === 0 ? 0 : 1,
     stats: {
-      features: project.features.length,
-      stories: project.features.reduce((n, f) => n + (f.spec?.stories.length || 0), 0),
+      features: featuresToAudit.length,
+      stories: featuresToAudit.reduce((n, f) => n + (f.spec?.stories.length || 0), 0),
       acs: totalAcs,
       acsWithTest,
       acsProven,
-      assumptionsOpen: project.features.reduce(
+      assumptionsOpen: featuresToAudit.reduce(
         (n, f) => n + (f.spec?.assumptions.filter((a) => a.status === 'open').length || 0),
         0
       ),
-      questionsOpen: project.features.reduce(
+      questionsOpen: featuresToAudit.reduce(
         (n, f) => n + (f.spec?.questions.filter((q) => q.status === 'open').length || 0),
         0
       ),
